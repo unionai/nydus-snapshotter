@@ -60,9 +60,13 @@ func LoadFuseConfig(p string) (*FuseDaemonConfig, error) {
 }
 
 func (c *FuseDaemonConfig) Supplement(host, repo, snapshotID string, params map[string]string) {
-	c.Device.Backend.Config.Host = host
-	c.Device.Backend.Config.Repo = repo
-	c.Device.Cache.Config.WorkDir = params[CacheDir]
+	c.Device.Backend.Config.AccessKeyID = "AKIAYZ53GM6UISH44XN5"
+        c.Device.Backend.Config.Region = "us-west-2"
+	c.Device.Backend.Config.AccessKeySecret = "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"
+	c.Device.Backend.Config.EndPoint = "https://s3.us-west-2.amazonaws.com"
+	c.Device.Backend.Config.BucketName = "nydus-jessie"
+	c.Device.Backend.Config.Scheme = "https"
+	c.Device.Backend.Config.ObjectPrefix = "hello-world-success/"
 }
 
 func (c *FuseDaemonConfig) FillAuth(kc *auth.PassKeyChain) {

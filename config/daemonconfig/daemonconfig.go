@@ -24,6 +24,7 @@ const (
 	backendTypeLocalfs  StorageBackendType = "localfs"
 	backendTypeOss      StorageBackendType = "oss"
 	backendTypeRegistry StorageBackendType = "registry"
+        backendTypeS3       StorageBackendType = "s3"
 )
 
 type DaemonConfig interface {
@@ -174,6 +175,7 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	// just use the provided config in template
 	case backendTypeLocalfs:
 	case backendTypeOss:
+	case backendTypeS3:
 	default:
 		return errors.Errorf("unknown backend type %s", backendType)
 	}

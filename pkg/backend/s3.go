@@ -48,6 +48,8 @@ type S3Config struct {
 	BucketName      string `json:"bucket_name,omitempty"`
 	Region          string `json:"region,omitempty"`
 	ObjectPrefix    string `json:"object_prefix,omitempty"`
+        Region          string `json:"region,omitempty"`
+
 }
 
 func newS3Backend(rawConfig []byte, forcePush bool) (*S3Backend, error) {
