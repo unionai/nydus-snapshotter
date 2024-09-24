@@ -155,9 +155,7 @@ spec:
           path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
           type: DirectoryOrCreate
       - name: nydus-opt
-        hostPath:
-          path: /opt/nydus
-          type: DirectoryOrCreate
+        emptyDir: {}
       - name: nydus-etc
         hostPath:
           path: /etc/nydus
@@ -166,8 +164,7 @@ spec:
         hostPath:
           path: /etc/containerd/
       - name: local-bin
-        hostPath:
-          path: /usr/local/bin/
+        emptyDir: {}
       - name: etc-systemd-system
         hostPath:
           path: /etc/systemd/system/
