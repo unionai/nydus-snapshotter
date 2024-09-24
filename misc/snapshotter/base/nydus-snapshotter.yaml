@@ -44,7 +44,7 @@ data:
   FS_DRIVER: "fusedev"
   ENABLE_CONFIG_FROM_VOLUME: "false"
   ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER: "false"
-  ENABLE_SYSTEMD_SERVICE: "true"
+  ENABLE_SYSTEMD_SERVICE: "false"
 
 ---
 apiVersion: apps/v1
