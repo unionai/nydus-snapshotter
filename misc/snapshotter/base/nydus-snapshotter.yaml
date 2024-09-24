@@ -1,5 +1,39 @@
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "patch"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nydus-snapshotter-role
+subjects:
+- kind: ServiceAccount
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nydus-snapshotter-configs
@@ -57,7 +91,7 @@ spec:
               configMapKeyRef:
                 name: nydus-snapshotter-configs
                 key: ENABLE_CONFIG_FROM_VOLUME
-                optional: true 
+                optional: true
           - name: ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER
             valueFrom:
               configMapKeyRef:
@@ -69,7 +103,7 @@ spec:
               configMapKeyRef:
                 name: nydus-snapshotter-configs
                 key: ENABLE_SYSTEMD_SERVICE
-                optional: true                    
+                optional: true
         lifecycle:
           preStop:
             exec:
@@ -78,7 +112,7 @@ spec:
               - "-c"
               - |
                 /opt/nydus-artifacts/opt/nydus/snapshotter.sh cleanup
-        command: 
+        command:
          - bash
          - -c
          - |-
@@ -97,7 +131,7 @@ spec:
           mountPropagation: Bidirectional
         - name: nydus-etc
           mountPath: "/etc/nydus"
-          mountPropagation: Bidirectional     
+          mountPropagation: Bidirectional
         - name: containerd-conf
           mountPath: "/etc/containerd/"
         - name: local-bin
@@ -137,4 +171,4 @@ spec:
       - name: etc-systemd-system
         hostPath:
           path: /etc/systemd/system/
-      
+
