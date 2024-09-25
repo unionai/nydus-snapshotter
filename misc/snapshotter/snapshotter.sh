@@ -134,17 +134,17 @@ function configure_snapshotter() {
 
     # We need to configure containerd to use configuration required by nydus
     # Ref: https://github.com/containerd/nydus-snapshotter/blob/main/docs/run_nydus_in_kubernetes.md#run-nydus-snapshotter-in-kubernetes
-    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.discard_unpacked_layers false
-    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.disable_snapshot_annotations false
+    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.discard_unpacked_layers false
+    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.disable_snapshot_annotations false
 
     # Ensure that nydus is appropriately configured as a container snapshotter plugin
     # Ref: https://github.com/containerd/containerd/blob/main/docs/PLUGINS.md#proxy-plugins
-    toml set --overwrite $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.type    snapshot
-    toml set --overwrite $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.address /run/containerd-nydus/containerd-nydus-grpc.sock
+    toml set $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.type    snapshot
+    toml set $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.address /run/containerd-nydus/containerd-nydus-grpc.sock
 
     # Set the default snapshotter to nydus
     # TODO: respect ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER
-    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.snapshotter nydus
+    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.snapshotter nydus
     # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.runtime_type io.containerd.runc.v2
     # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.snapshotter  nydus
 
@@ -325,6 +325,10 @@ function main() {
     if [[ $euid -ne 0 ]]; then
         die "This script must be run as root"
     fi
+
+    # TOML Test
+    echo $(which toml)
+    toml --help
 
     CONTAINER_RUNTIME=$(get_container_runtime)
     if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
