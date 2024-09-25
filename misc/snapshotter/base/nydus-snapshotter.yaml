@@ -134,8 +134,8 @@ spec:
           mountPropagation: Bidirectional
         - name: containerd-conf
           mountPath: "/etc/containerd/"
-        - name: local-bin
-          mountPath: "/usr/local/bin/"
+        # - name: local-bin
+        #   mountPath: "/usr/local/bin/"
         - name: etc-systemd-system
           mountPath: "/etc/systemd/system/"
         securityContext:
@@ -163,8 +163,10 @@ spec:
       - name: containerd-conf
         hostPath:
           path: /etc/containerd/
-      - name: local-bin
-        emptyDir: {}
+      # Original containerd nydus mount the host path /usr/local/bin. I don't understand why
+      # It appears to be making assumptions as to what binaries exist and can be executed.
+      # - name: local-bin
+      #   emptyDir: {}
       - name: etc-systemd-system
         hostPath:
           path: /etc/systemd/system/
