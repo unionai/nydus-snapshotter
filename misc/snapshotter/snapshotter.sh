@@ -62,7 +62,7 @@ wait_service_active(){
     while [ "$wait_time" -gt 0 ]; do
         if nsenter -t 1 -m systemctl is-active --quiet $service; then
             echo "$service is running"
-            return 0  
+            return 0
         else
             sleep "$sleep_time"
             wait_time=$((wait_time-sleep_time))
@@ -71,7 +71,7 @@ wait_service_active(){
 
     echo "Timeout reached. $service may not be running."
     nsenter -t 1 -m systemctl status $service
-    return 1  
+    return 1
 }
 
 function fs_driver_handler() {
@@ -79,27 +79,27 @@ function fs_driver_handler() {
         SNAPSHOTTER_CONFIG="${NYDUS_CONFIG_DIR}/config.toml"
     else
         case "${FS_DRIVER}" in
-        fusedev) 
-            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fusedev.json\"|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|fs_driver = .*|fs_driver = \"fusedev\"|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}" 
+        fusedev)
+            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fusedev.json\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|fs_driver = .*|fs_driver = \"fusedev\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}"
             ;;
-        fscache) 
-            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fscache.json\"|" "${SNAPSHOTTER_CONFIG}" 
+        fscache)
+            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fscache.json\"|" "${SNAPSHOTTER_CONFIG}"
             sed -i -e "s|fs_driver = .*|fs_driver = \"fscache\"|" "${SNAPSHOTTER_CONFIG}"
-            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}"  
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}"
             ;;
-        blockdev) 
-            sed -i -e "s|fs_driver = .*|fs_driver = \"blockdev\"|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|enable_tarfs = .*|enable_tarfs = true|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
-            sed -i -e "s|export_mode = .*|export_mode = \"layer_block_with_verity\"|" "${SNAPSHOTTER_CONFIG}"  
+        blockdev)
+            sed -i -e "s|fs_driver = .*|fs_driver = \"blockdev\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|enable_tarfs = .*|enable_tarfs = true|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|export_mode = .*|export_mode = \"layer_block_with_verity\"|" "${SNAPSHOTTER_CONFIG}"
             ;;
-        proxy) 
-            sed -i -e "s|fs_driver = .*|fs_driver = \"proxy\"|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
-            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
+        proxy)
+            sed -i -e "s|fs_driver = .*|fs_driver = \"proxy\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"
             ;;
         *) die "invalid fs driver ${FS_DRIVER}" ;;
         esac
@@ -116,46 +116,71 @@ function configure_snapshotter() {
 
 
     # When trying to edit the config file that is mounted by docker with `sed -i`, the error would happend:
-    # sed: cannot rename /etc/containerd/config.tomlpmdkIP: Device or resource busy  
-    # The reason is that `sed`` with option `-i` creates new file, and then replaces the old file with the new one, 
-    # which definitely will change the file inode. But the file is mounted by docker, which means we are not allowed to 
+    # sed: cannot rename /etc/containerd/config.tomlpmdkIP: Device or resource busy
+    # The reason is that `sed`` with option `-i` creates new file, and then replaces the old file with the new one,
+    # which definitely will change the file inode. But the file is mounted by docker, which means we are not allowed to
     # change its inode from within docker container.
-    # 
+    #
     # So we copy the original file to a backup, make changes to the backup, and then overwrite the original file with the backup.
+    echo "Previous Container Runtime config:" && cat $CONTAINER_RUNTIME_CONFIG && echo ""
     cp "$CONTAINER_RUNTIME_CONFIG" "$CONTAINER_RUNTIME_CONFIG".bak
+    WORKING_RUNTIME_CONFIG="$CONTAINER_RUNTIME_CONFIG".bak
     # Check and add nydus proxy plugin in the config
-    if grep -q '\[proxy_plugins.nydus\]' "$CONTAINER_RUNTIME_CONFIG".bak; then
-        echo "the config has configured the nydus proxy plugin!"
-    else
-        echo "Not found nydus proxy plugin!"
-        cat <<EOF >>"$CONTAINER_RUNTIME_CONFIG".bak
-        
-    [proxy_plugins.nydus]
-        type = "snapshot"
-        address = "$SNAPSHOTTER_GRPC_SOCKET"
-EOF
-    fi
+    # nydus_exists=$(toml check $CONTAINER_RUNTIME_CONFIG proxy_plugins.nydus)
 
-    if grep -q 'disable_snapshot_annotations' "$CONTAINER_RUNTIME_CONFIG".bak; then
-        sed -i -e "s|disable_snapshot_annotations = .*|disable_snapshot_annotations = false|" \
-                "${CONTAINER_RUNTIME_CONFIG}".bak
-    else
-        sed -i '/\[plugins\..*\.containerd\]/a\disable_snapshot_annotations = false' \
-                "${CONTAINER_RUNTIME_CONFIG}".bak
-    fi
-    if grep -q 'discard_unpacked_layers' "$CONTAINER_RUNTIME_CONFIG".bak; then
-        sed -i -e "s|discard_unpacked_layers = .*|discard_unpacked_layers = false|" \
-                "${CONTAINER_RUNTIME_CONFIG}".bak
-    else
-        sed -i '/\[plugins\..*\.containerd\]/a\discard_unpacked_layers = false' \
-                "${CONTAINER_RUNTIME_CONFIG}".bak
-    fi
+    # Skip checking if Nydus exists as the following operations should be completely reversible and
+    # we need to support the case where the snapshotter needs to be updated because we are updating this underlying
+    # script
 
-    if [ "${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER}" == "false" ]; then
-        sed -i -e '/\[plugins\..*\.containerd\]/,/snapshotter =/ s/snapshotter = "[^"]*"/snapshotter = "nydus"/' "${CONTAINER_RUNTIME_CONFIG}".bak
-    fi
-    
-    cat "${CONTAINER_RUNTIME_CONFIG}".bak >  "${CONTAINER_RUNTIME_CONFIG}"
+    # We need to configure containerd to use configuration required by nydus
+    # Ref: https://github.com/containerd/nydus-snapshotter/blob/main/docs/run_nydus_in_kubernetes.md#run-nydus-snapshotter-in-kubernetes
+    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.discard_unpacked_layers false
+    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.disable_snapshot_annotations false
+
+    # Ensure that nydus is appropriately configured as a container snapshotter plugin
+    # Ref: https://github.com/containerd/containerd/blob/main/docs/PLUGINS.md#proxy-plugins
+    toml set --overwrite $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.type    snapshot
+    toml set --overwrite $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.address /run/containerd-nydus/containerd-nydus-grpc.sock
+
+    # Set the default snapshotter to nydus
+    # TODO: respect ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER
+    toml set --overwrite $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.snapshotter nydus
+    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.runtime_type io.containerd.runc.v2
+    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.snapshotter  nydus
+
+#     if grep -q '\[proxy_plugins.nydus\]' "$CONTAINER_RUNTIME_CONFIG".bak; then
+#         echo "the config has configured the nydus proxy plugin!"
+#     else
+#         echo "Not found nydus proxy plugin!"
+#         cat <<EOF >>"$CONTAINER_RUNTIME_CONFIG".bak
+
+#     [proxy_plugins.nydus]
+#         type = "snapshot"
+#         address = "$SNAPSHOTTER_GRPC_SOCKET"
+# EOF
+#     fi
+
+#     if grep -q 'disable_snapshot_annotations' "$CONTAINER_RUNTIME_CONFIG".bak; then
+#         sed -i -e "s|disable_snapshot_annotations = .*|disable_snapshot_annotations = false|" \
+#                 "${CONTAINER_RUNTIME_CONFIG}".bak
+#     else
+#         sed -i '/\[plugins\..*\.containerd\]/a\disable_snapshot_annotations = false' \
+#                 "${CONTAINER_RUNTIME_CONFIG}".bak
+#     fi
+#     if grep -q 'discard_unpacked_layers' "$CONTAINER_RUNTIME_CONFIG".bak; then
+#         sed -i -e "s|discard_unpacked_layers = .*|discard_unpacked_layers = false|" \
+#                 "${CONTAINER_RUNTIME_CONFIG}".bak
+#     else
+#         sed -i '/\[plugins\..*\.containerd\]/a\discard_unpacked_layers = false' \
+#                 "${CONTAINER_RUNTIME_CONFIG}".bak
+#     fi
+
+#     if [ "${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER}" == "false" ]; then
+#         sed -i -e '/\[plugins\..*\.containerd\]/,/snapshotter =/ s/snapshotter = "[^"]*"/snapshotter = "nydus"/' "${CONTAINER_RUNTIME_CONFIG}".bak
+#     fi
+
+    cat "${WORKING_RUNTIME_CONFIG}" >  "${CONTAINER_RUNTIME_CONFIG}"
+    echo "Updated Container Runtime config:" && cat $CONTAINER_RUNTIME_CONFIG && echo ""
 }
 
 function install_snapshotter() {

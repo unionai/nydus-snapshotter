@@ -1,24 +1,34 @@
 FROM alpine:3.17.0 AS base
 
-FROM base AS sourcer
-ARG TARGETARCH
+FROM base AS nydus-sourcer
+ARG TARGETPLATFORM
 ARG NYDUS_VER=v2.2.5
 
 RUN apk add -q --no-cache curl && \
-    apk add -q --no-cache --upgrade grep && \
-    curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
-    echo $NYDUS_VER > /.nydus_version && \
-    tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
-    rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
-    mv nydus-static/* / \
-    && rm -rf /nydus-overlayfs
+  apk add -q --no-cache --upgrade grep && \
+  curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+  echo $NYDUS_VER > /.nydus_version && \
+  tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+  rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+  mv nydus-static/* / \
+  && rm -rf /nydus-overlayfs
 
 FROM base AS kubectl-sourcer
-ARG TARGETARCH
+ARG TARGETPLATFORM
 
 RUN apk add -q --no-cache curl && \
-    curl -fsSL -o /usr/bin/kubectl https://dl.k8s.io/release/"$(curl -L -s https://dl.k8s.io/release/stable.txt)"/bin/linux/"$TARGETARCH"/kubectl && \
-    chmod +x /usr/bin/kubectl
+  curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/"$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)"/bin/"$TARGETPLATFORM"/kubectl && \
+  chmod +x /usr/bin/kubectl
+
+FROM base AS toml-sourcer
+ARG TOML_CLI_VER=0.2.3
+
+RUN apk add -q --no-cache curl && \
+  curl -fsSL -O https://github.com/gnprice/toml-cli/releases/download/v$TOML_CLI_VER/toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
+  tar xzf toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
+  mv toml-$TOML_CLI_VER-x86_64-linux/toml /usr/local/bin/toml && \
+  rm -rf toml-$TOML_CLI_VER-x86_64-linux toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
+  chmod +x /usr/local/bin/toml
 
 FROM base
 ARG DESTINATION=/opt/nydus-artifacts
@@ -32,11 +42,12 @@ RUN apk add -q --no-cache libc6-compat bash
 VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus
 VOLUME /run/containerd-nydus
 
-COPY --from=sourcer /.nydus_version /.nydus_version
+COPY --from=nydus-sourcer /.nydus_version /.nydus_version
 COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl
+COPY --from=toml-sourcer /usr/local/bin/toml /usr/local/bin/toml
 
 RUN mkdir -p ${CONFIG_DESTINATION} ${BINARY_DESTINATION} ${SCRIPT_DESTINATION} /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache /tmp/blobs/
-COPY --from=sourcer /nydus* ${BINARY_DESTINATION}/
+COPY --from=nydus-sourcer /nydus* ${BINARY_DESTINATION}/
 COPY --chmod=755 containerd-nydus-grpc nydus-overlayfs ${BINARY_DESTINATION}/
 COPY --chmod=755 snapshotter.sh ${SCRIPT_DESTINATION}/snapshotter.sh
 COPY nydusd-config.fusedev.json ${CONFIG_DESTINATION}/nydusd-fusedev.json
