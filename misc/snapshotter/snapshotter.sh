@@ -126,7 +126,7 @@ function configure_snapshotter() {
     cp "$CONTAINER_RUNTIME_CONFIG" "$CONTAINER_RUNTIME_CONFIG".bak
     WORKING_RUNTIME_CONFIG="$CONTAINER_RUNTIME_CONFIG".bak
 
-    update_containerd_config --config $WORKING_RUNTIME_CONFIG > $WORKING_RUNTIME_CONFIG
+    update_containerd_config --config $WORKING_RUNTIME_CONFIG --output $WORKING_RUNTIME_CONFIG
 
 #     if grep -q '\[proxy_plugins.nydus\]' "$CONTAINER_RUNTIME_CONFIG".bak; then
 #         echo "the config has configured the nydus proxy plugin!"
@@ -159,7 +159,7 @@ function configure_snapshotter() {
 #         sed -i -e '/\[plugins\..*\.containerd\]/,/snapshotter =/ s/snapshotter = "[^"]*"/snapshotter = "nydus"/' "${CONTAINER_RUNTIME_CONFIG}".bak
 #     fi
 
-    cat "${WORKING_RUNTIME_CONFIG}" >  "${CONTAINER_RUNTIME_CONFIG}"
+    cat "${WORKING_RUNTIME_CONFIG}" > "${CONTAINER_RUNTIME_CONFIG}"
     echo "Updated Container Runtime config:" && cat $CONTAINER_RUNTIME_CONFIG && echo ""
 }
 
