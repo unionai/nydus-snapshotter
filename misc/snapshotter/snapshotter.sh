@@ -192,6 +192,8 @@ function deploy_snapshotter() {
     else
         echo "running snapshotter as standalone process:"
         echo "${COMMANDLINE}"
+        echo "Config:"
+        cat "${SNAPSHOTTER_CONFIG}"
         ${COMMANDLINE} &
     fi
     wait_service_active 30 5 ${CONTAINER_RUNTIME}
