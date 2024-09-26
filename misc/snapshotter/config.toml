@@ -78,9 +78,9 @@ enable_kubeconfig_keychain = false
 # synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with specified kubeconfig (default `$KUBECONFIG` or `~/.kube/config`)
 kubeconfig_path = ""
 # Fetch the private registry auth as CRI image service proxy
-enable_cri_keychain = false
+enable_cri_keychain = true
 # the target image service when using image proxy
-#image_service_address = "/run/containerd/containerd.sock"
+image_service_address = "/run/containerd/containerd.sock"
 
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper

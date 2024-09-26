@@ -134,8 +134,8 @@ spec:
           mountPropagation: Bidirectional
         - name: containerd-conf
           mountPath: "/etc/containerd/"
-        # - name: local-bin
-        #   mountPath: "/usr/local/bin/"
+        - name: containerd-socket
+          mountPath: /run/containerd/containerd.sock
         - name: etc-systemd-system
           mountPath: "/etc/systemd/system/"
         securityContext:
@@ -166,6 +166,10 @@ spec:
       # It appears to be making assumptions as to what binaries exist and can be executed.
       # - name: local-bin
       #   emptyDir: {}
+      - name: containerd-socket
+        hostPath:
+          path: /run/containerd/containerd.sock
+          type: Socket
       - name: etc-systemd-system
         hostPath:
           path: /etc/systemd/system/
