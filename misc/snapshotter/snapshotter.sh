@@ -125,28 +125,8 @@ function configure_snapshotter() {
     echo "Previous Container Runtime config:" && cat $CONTAINER_RUNTIME_CONFIG && echo ""
     cp "$CONTAINER_RUNTIME_CONFIG" "$CONTAINER_RUNTIME_CONFIG".bak
     WORKING_RUNTIME_CONFIG="$CONTAINER_RUNTIME_CONFIG".bak
-    # Check and add nydus proxy plugin in the config
-    # nydus_exists=$(toml check $CONTAINER_RUNTIME_CONFIG proxy_plugins.nydus)
 
-    # Skip checking if Nydus exists as the following operations should be completely reversible and
-    # we need to support the case where the snapshotter needs to be updated because we are updating this underlying
-    # script
-
-    # We need to configure containerd to use configuration required by nydus
-    # Ref: https://github.com/containerd/nydus-snapshotter/blob/main/docs/run_nydus_in_kubernetes.md#run-nydus-snapshotter-in-kubernetes
-    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.discard_unpacked_layers false > $WORKING_RUNTIME_CONFIG
-    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.disable_snapshot_annotations false > $WORKING_RUNTIME_CONFIG
-
-    # Ensure that nydus is appropriately configured as a container snapshotter plugin
-    # Ref: https://github.com/containerd/containerd/blob/main/docs/PLUGINS.md#proxy-plugins
-    toml set $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.type    snapshot > $WORKING_RUNTIME_CONFIG
-    toml set $WORKING_RUNTIME_CONFIG proxy_plugins.nydus.address /run/containerd-nydus/containerd-nydus-grpc.sock > $WORKING_RUNTIME_CONFIG
-
-    # Set the default snapshotter to nydus
-    # TODO: respect ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER
-    toml set $WORKING_RUNTIME_CONFIG plugins.\"io.containerd.grpc.v1.cri\".containerd.snapshotter nydus > $WORKING_RUNTIME_CONFIG
-    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.runtime_type io.containerd.runc.v2
-    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.snapshotter  nydus
+    update_containerd_config --config $WORKING_RUNTIME_CONFIG > $WORKING_RUNTIME_CONFIG
 
 #     if grep -q '\[proxy_plugins.nydus\]' "$CONTAINER_RUNTIME_CONFIG".bak; then
 #         echo "the config has configured the nydus proxy plugin!"
@@ -325,10 +305,6 @@ function main() {
     if [[ $euid -ne 0 ]]; then
         die "This script must be run as root"
     fi
-
-    # TOML Test
-    echo $(which toml)
-    toml --help
 
     CONTAINER_RUNTIME=$(get_container_runtime)
     if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then

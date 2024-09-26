@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+
+import argparse
+import sys
+
+import toml
+
+
+def update_toml_config(config_path, output_path):
+    # Read the existing TOML file
+    try:
+        with open(config_path, "r") as f:
+            config = toml.load(f)
+    except FileNotFoundError:
+        print(f"Error: Config file not found: {config_path}")
+        sys.exit(1)
+    except toml.TomlDecodeError:
+        print(f"Error: Invalid TOML file: {config_path}")
+        sys.exit(1)
+
+    # We need to configure containerd to use configuration required by nydus
+    # Ref: https://github.com/containerd/nydus-snapshotter/blob/main/docs/run_nydus_in_kubernetes.md#run-nydus-snapshotter-in-kubernetes
+    config.setdefault("plugins", {}).setdefault(
+        "io.containerd.grpc.v1.cri", {}
+    ).setdefault("containerd", {})["discard_unpacked_layers"] = False
+    config.setdefault("plugins", {}).setdefault(
+        "io.containerd.grpc.v1.cri", {}
+    ).setdefault("containerd", {})["disable_snapshot_annotations"] = False
+
+    # Ensure that nydus is appropriately configured as a container snapshotter plugin
+    # Ref: https://github.com/containerd/containerd/blob/main/docs/PLUGINS.md#proxy-plugins
+    config.setdefault("proxy_plugins", {}).setdefault("nydus", {})["type"] = "snapshot"
+    config.setdefault("proxy_plugins", {}).setdefault("nydus", {})[
+        "address"
+    ] = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+
+    # Set the default snapshotter to nydus
+    # TODO(Mike) Make runtime configuration
+    config.setdefault("plugins", {}).setdefault(
+        "io.containerd.grpc.v1.cri", {}
+    ).setdefault("containerd", {})["snapshotter"] = "nydus"
+    # For custom runtime, uncomment the following lines
+    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.runtime_type io.containerd.runc.v2
+    # toml set --overwrite $containerd_config plugins.\"io.containerd.grpc.v1.cri\".containerd.runtimes.runc-nydus.snapshotter  nydus
+
+    # Write the updated configuration back to the file
+    try:
+        if output_path:
+            with open(output_path, "w") as f:
+                toml.dump(config, f)
+            print(f"TOML configuration updated: {output_path}")
+        else:
+            print(toml.dumps(config))
+    except PermissionError:
+        print(f"Error: Permission denied when writing to {output_path}")
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Update containerd TOML configuration."
+    )
+    parser.add_argument(
+        "-c", "--config", help="Path to the Containerd TOML configuration file."
+    )
+    parser.add_argument("-o", "--output", help="Path to the output file.")
+    args = parser.parse_args()
+
+    if not args.config:
+        print("Error: Missing required argument: --config")
+        parser.print_help()
+        sys.exit(1)
+
+    update_toml_config(args.config, args.output)
+
+
+if __name__ == "__main__":
+    main()

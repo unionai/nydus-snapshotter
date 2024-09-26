@@ -20,16 +20,6 @@ RUN apk add -q --no-cache curl && \
   curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/"$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)"/bin/"$TARGETPLATFORM"/kubectl && \
   chmod +x /usr/bin/kubectl
 
-FROM base AS toml-sourcer
-ARG TOML_CLI_VER=0.2.3
-
-RUN apk add -q --no-cache curl && \
-  curl -fsSL -O https://github.com/gnprice/toml-cli/releases/download/v$TOML_CLI_VER/toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
-  tar xzf toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
-  mv toml-$TOML_CLI_VER-x86_64-linux/toml /usr/local/bin/toml && \
-  rm -rf toml-$TOML_CLI_VER-x86_64-linux toml-$TOML_CLI_VER-x86_64-linux.tar.gz && \
-  chmod +x /usr/local/bin/toml
-
 FROM base
 ARG DESTINATION=/opt/nydus-artifacts
 ARG CONFIG_DESTINATION=${DESTINATION}/etc/nydus
@@ -37,14 +27,16 @@ ARG BINARY_DESTINATION=${DESTINATION}/usr/local/bin
 ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 
 WORKDIR /root/
-RUN apk add -q --no-cache libc6-compat bash
+RUN apk add -q --no-cache libc6-compat bash python3 py3-pip && \
+  pip3 install --no-cache-dir toml && \
+  apk del py3-pip && \
+  rm -rf /var/cache/apk/* /root/.cache
 
 VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus
 VOLUME /run/containerd-nydus
 
 COPY --from=nydus-sourcer /.nydus_version /.nydus_version
 COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl
-COPY --from=toml-sourcer /usr/local/bin/toml /usr/local/bin/toml
 
 RUN mkdir -p ${CONFIG_DESTINATION} ${BINARY_DESTINATION} ${SCRIPT_DESTINATION} /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache /tmp/blobs/
 COPY --from=nydus-sourcer /nydus* ${BINARY_DESTINATION}/
@@ -55,3 +47,4 @@ COPY nydusd-config-localfs.json ${CONFIG_DESTINATION}/nydusd-localfs.json
 COPY nydusd-config.fscache.json ${CONFIG_DESTINATION}/nydusd-fscache.json
 COPY config.toml ${CONFIG_DESTINATION}/config.toml
 COPY nydus-snapshotter.service ${DESTINATION}/etc/systemd/system/nydus-snapshotter.service
+COPY --chmod=755 update_containerd_config /usr/local/bin/update_containerd_config
