@@ -48,7 +48,7 @@ memory_limit = ""
 
 [log]
 # Print logs to stdout rather than logging files
-log_to_stdout = false
+log_to_stdout = true
 # Snapshotter's log level
 level = "debug"
 log_rotation_compress = true

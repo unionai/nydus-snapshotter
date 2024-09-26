@@ -140,7 +140,6 @@ spec:
           mountPath: "/etc/systemd/system/"
         securityContext:
           privileged: true
-
       volumes:
       - name: config-volume
         configMap:
