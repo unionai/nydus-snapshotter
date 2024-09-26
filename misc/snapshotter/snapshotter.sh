@@ -190,7 +190,8 @@ function deploy_snapshotter() {
         nsenter -t 1 -m systemctl enable nydus-snapshotter.service
         wait_service_active 30 5 nydus-snapshotter
     else
-        echo "running snapshotter as standalone process"
+        echo "running snapshotter as standalone process:"
+        echo "${COMMANDLINE}"
         ${COMMANDLINE} &
     fi
     wait_service_active 30 5 ${CONTAINER_RUNTIME}
