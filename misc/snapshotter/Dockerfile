@@ -27,7 +27,7 @@ ARG BINARY_DESTINATION=${DESTINATION}/usr/local/bin
 ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 
 WORKDIR /root/
-RUN apk add -q --no-cache libc6-compat bash python3 py3-pip && \
+RUN apk add -q --no-cache libc6-compat gcompat bash python3 py3-pip && \
   pip3 install --no-cache-dir toml && \
   apk del py3-pip && \
   rm -rf /var/cache/apk/* /root/.cache
