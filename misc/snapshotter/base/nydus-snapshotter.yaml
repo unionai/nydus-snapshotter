@@ -104,6 +104,8 @@ spec:
                 name: nydus-snapshotter-configs
                 key: ENABLE_SYSTEMD_SERVICE
                 optional: true
+          - name: DOCKER_CONFIG
+            value: "/etc/docker/.dockerconfigjson"
         lifecycle:
           preStop:
             exec:
@@ -138,6 +140,8 @@ spec:
           mountPath: /run/containerd/containerd.sock
         - name: etc-systemd-system
           mountPath: "/etc/systemd/system/"
+        - name: dockerconfig
+          mountPath: "/etc/docker/"
         securityContext:
           privileged: true
       volumes:
@@ -173,4 +177,7 @@ spec:
       - name: etc-systemd-system
         hostPath:
           path: /etc/systemd/system/
+      - name: dockerconfig
+        secret:
+          secretName: dockerconfig
 
