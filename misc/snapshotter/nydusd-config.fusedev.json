@@ -10,7 +10,8 @@
           "url": "http://nydus-gar-proxy.nydus-system.svc.cluster.local:80",
           "fallback": false,
           "ping_url": "http://nydus-gar-proxy.nydus-system.svc.cluster.local:80/healthz",
-          "check_interval": "5"
+          "check_interval": 5,
+          "use_http": true
         }
       }
     },
