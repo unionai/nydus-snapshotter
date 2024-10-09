@@ -5,6 +5,12 @@
       "config": {
         "dir": "/data/nydus/registry"
       }
+    },
+    "cache": {
+      "type": "blobcache",
+      "config": {
+        "work_dir": "/data/nydus/cache"
+      }
     }
   },
   "mode": "direct",
