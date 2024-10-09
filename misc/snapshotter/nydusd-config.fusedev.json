@@ -5,9 +5,6 @@
       "config": {
         "dir": "/data/nydus/registry"
       }
-    },
-    "cache": {
-      "type": "dummycache"
     }
   },
   "mode": "direct",
