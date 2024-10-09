@@ -1,22 +1,13 @@
 {
   "device": {
     "backend": {
-      "type": "registry",
+      "type": "localfs",
       "config": {
-        "timeout": 5,
-        "connect_timeout": 5,
-        "retry_limit": 2,
-        "proxy": {
-          "url": "http://nydus-gar-proxy.nydus-system.svc.cluster.local:80",
-          "fallback": true,
-          "ping_url": "http://nydus-gar-proxy.nydus-system.svc.cluster.local:80/healthz",
-          "check_interval": 5,
-          "use_http": true
-        }
+        "dir": "/data/nydus/registry"
       }
     },
     "cache": {
-      "type": "blobcache"
+      "type": "dummycache"
     }
   },
   "mode": "direct",

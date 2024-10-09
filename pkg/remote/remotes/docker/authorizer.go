@@ -240,8 +240,10 @@ func newAuthHandler(client *http.Client, hdr http.Header, scheme auth.Authentica
 func (ah *authHandler) authorize(ctx context.Context) (string, string, error) {
 	switch ah.scheme {
 	case auth.BasicAuth:
+		log.L.Debug("Using basic authentication")
 		return ah.doBasicAuth(ctx)
 	case auth.BearerAuth:
+		log.L.Debug("Using Bearer authentication")
 		return ah.doBearerAuth(ctx)
 	default:
 		return "", "", fmt.Errorf("failed to find supported auth scheme: %s: %w", string(ah.scheme), errdefs.ErrNotImplemented)

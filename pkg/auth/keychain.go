@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	distribution "github.com/distribution/reference"
@@ -99,8 +100,10 @@ func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyCha
 
 	kc = FromDockerConfig(host)
 	if kc != nil {
+		log.L.Debugf("Found Docker config for host: %s", host)
 		return kc
 	}
+	log.L.Debugf("No Docker config found for host: %s", host)
 
 	return FromKubeSecretDockerConfig(host)
 }

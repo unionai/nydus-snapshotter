@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"github.com/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
@@ -37,6 +38,7 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 		return nil, errors.Wrapf(err, "failed parse docker ref %s", ref)
 	}
 	host := distribution.Domain(named)
+	log.L.Debugf("Resolving ref: %s, digest: %s, labels: %v, host: %s", ref, digest, labels, host)
 	sref := fmt.Sprintf("%s/%s", host, distribution.Path(named))
 	nref, err := name.ParseReference(sref)
 	if err != nil {
