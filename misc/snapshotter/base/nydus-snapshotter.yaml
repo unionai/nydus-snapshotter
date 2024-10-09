@@ -141,6 +141,8 @@ spec:
           mountPath: "/etc/systemd/system/"
         - name: gcs-fuse-csi-ephemeral
           mountPath: /data/nydus/registry
+        - name: nydus-cache
+          mountPath: /data/nydus/cache
         securityContext:
           privileged: true
       volumes:
@@ -182,3 +184,5 @@ spec:
           volumeAttributes:
             bucketName: mike-test-fuse-load-test-gcp-uc-us-east-2
             mountOptions: "implicit-dirs"
+      - name: nydus-cache
+        emptyDir: {}
