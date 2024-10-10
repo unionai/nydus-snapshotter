@@ -28,10 +28,8 @@ ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 
 WORKDIR /root/
 
-# RUN apk add -q --no-cache libc6-compat gcompat bash python3 py3-pip && \
-#   pip3 install --no-cache-dir toml && \
-#   apk del py3-pip && \
-#   rm -rf /var/cache/apk/* /root/.cache
+RUN apk add -q --no-cache libc6-compat gcompat bash && \
+  rm -rf /var/cache/apk/* /root/.cache
 
 VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus
 VOLUME /run/containerd-nydus
