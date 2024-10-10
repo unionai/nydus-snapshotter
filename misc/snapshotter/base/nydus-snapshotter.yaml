@@ -238,7 +238,7 @@ spec:
         gke-gcsfuse/volumes: "true"
     spec:
       serviceAccountName: nydus-snapshotter-sa
-      hostNetwork: false # gcsfuse does not allow hostNetwork: true
+      # hostNetwork: false # gcsfuse does not allow hostNetwork: true
       hostPID: true
       containers:
       - name: nydus-snapshotter
