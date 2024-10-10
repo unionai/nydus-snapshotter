@@ -291,7 +291,7 @@ spec:
           mountPath: "/etc/nydus-snapshotter"
         - name: nydus-lib
           mountPath: "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
-          # mountPropagation: Bidirectional
+          mountPropagation: Bidirectional
         - name: nydus-run
           mountPath: "/run/containerd-nydus"
           mountPropagation: Bidirectional
@@ -323,10 +323,9 @@ spec:
           path: /run/containerd-nydus
           type: DirectoryOrCreate
       - name: nydus-lib
-        emptyDir: {}
-        # hostPath:
-        #   path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
-        #   type: DirectoryOrCreate
+        hostPath:
+          path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
+          type: DirectoryOrCreate
       # - name: nydus-opt
       #   emptyDir: {}
       # - name: nydus-etc
