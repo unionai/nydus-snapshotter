@@ -291,13 +291,13 @@ spec:
           mountPath: "/etc/nydus-snapshotter"
         - name: nydus-lib
           mountPath: "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
-          mountPropagation: Bidirectional
+          # mountPropagation: Bidirectional
         - name: nydus-run
           mountPath: "/run/containerd-nydus"
           mountPropagation: Bidirectional
-        - name: nydus-opt
-          mountPath: "/opt/nydus"
-          mountPropagation: Bidirectional
+        # - name: nydus-opt
+        #   mountPath: "/opt/nydus"
+        #   mountPropagation: Bidirectional
         - name: nydus-etc
           mountPath: "/etc/nydus"
           # mountPropagation: Bidirectional
@@ -317,23 +317,25 @@ spec:
       - name: config-volume
         configMap:
           name: nydus-snapshotter-configs
-          optional: true
       - name: nydus-run
         hostPath:
           path: /run/containerd-nydus
           type: DirectoryOrCreate
       - name: nydus-lib
-        hostPath:
-          path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
-          type: DirectoryOrCreate
-      - name: nydus-opt
         emptyDir: {}
+        # hostPath:
+        #   path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
+        #   type: DirectoryOrCreate
+      # - name: nydus-opt
+      #   emptyDir: {}
       - name: nydus-etc
-        items:
-        - key: config.toml
-          path: config.toml
-        - key: nydusd-config.json
-          path: nydusd-config.json
+        configMap:
+          name: nydus-snapshotter-configs
+          items:
+          - key: config.toml
+            path: config.toml
+          - key: nydusd-config.json
+            path: nydusd-config.json
       - name: containerd-conf
         hostPath:
           path: /etc/containerd/
