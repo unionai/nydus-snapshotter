@@ -26,6 +26,7 @@ SNAPSHOTTER_SCRYPT_DIR="${SNAPSHOTTER_SCRYPT_DIR:-/opt/nydus}"
 
 # The binary about nydus-snapshotter
 SNAPSHOTTER_BINARY="${SNAPSHOTTER_BINARY:-${NYDUS_BINARY_DIR}/containerd-nydus-grpc}"
+CONTAINERD_CONFIG_UPDATER_BINARY="${CONTAINERD_CONFIG_UPDATER_BINARY:-${NYDUS_BINARY_DIR}/containerd-config-updater}"
 
 # The config about nydus snapshotter
 SNAPSHOTTER_CONFIG="${SNAPSHOTTER_CONFIG:-${NYDUS_CONFIG_DIR}/config.toml}"
@@ -126,38 +127,7 @@ function configure_snapshotter() {
     cp "$CONTAINER_RUNTIME_CONFIG" "$CONTAINER_RUNTIME_CONFIG".bak
     WORKING_RUNTIME_CONFIG="$CONTAINER_RUNTIME_CONFIG".bak
 
-    update_containerd_config --config $WORKING_RUNTIME_CONFIG --output $WORKING_RUNTIME_CONFIG
-
-#     if grep -q '\[proxy_plugins.nydus\]' "$CONTAINER_RUNTIME_CONFIG".bak; then
-#         echo "the config has configured the nydus proxy plugin!"
-#     else
-#         echo "Not found nydus proxy plugin!"
-#         cat <<EOF >>"$CONTAINER_RUNTIME_CONFIG".bak
-
-#     [proxy_plugins.nydus]
-#         type = "snapshot"
-#         address = "$SNAPSHOTTER_GRPC_SOCKET"
-# EOF
-#     fi
-
-#     if grep -q 'disable_snapshot_annotations' "$CONTAINER_RUNTIME_CONFIG".bak; then
-#         sed -i -e "s|disable_snapshot_annotations = .*|disable_snapshot_annotations = false|" \
-#                 "${CONTAINER_RUNTIME_CONFIG}".bak
-#     else
-#         sed -i '/\[plugins\..*\.containerd\]/a\disable_snapshot_annotations = false' \
-#                 "${CONTAINER_RUNTIME_CONFIG}".bak
-#     fi
-#     if grep -q 'discard_unpacked_layers' "$CONTAINER_RUNTIME_CONFIG".bak; then
-#         sed -i -e "s|discard_unpacked_layers = .*|discard_unpacked_layers = false|" \
-#                 "${CONTAINER_RUNTIME_CONFIG}".bak
-#     else
-#         sed -i '/\[plugins\..*\.containerd\]/a\discard_unpacked_layers = false' \
-#                 "${CONTAINER_RUNTIME_CONFIG}".bak
-#     fi
-
-#     if [ "${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER}" == "false" ]; then
-#         sed -i -e '/\[plugins\..*\.containerd\]/,/snapshotter =/ s/snapshotter = "[^"]*"/snapshotter = "nydus"/' "${CONTAINER_RUNTIME_CONFIG}".bak
-#     fi
+    ${CONTAINERD_CONFIG_UPDATER_BINARY} -c $WORKING_RUNTIME_CONFIG -o $WORKING_RUNTIME_CONFIG
 
     cat "${WORKING_RUNTIME_CONFIG}" > "${CONTAINER_RUNTIME_CONFIG}"
     echo "Updated Container Runtime config:" && cat $CONTAINER_RUNTIME_CONFIG && echo ""
