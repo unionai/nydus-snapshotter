@@ -88,17 +88,12 @@ func updateTomlConfig(configPath, outputPath, runtimeHandler string) error {
 			"snapshotter": "nydus",
 		}
 	} else {
-		// Preserve as much of the default runtime configuration as much as possible.
-		// This assumes that the snapshotter is the only configuration that should change and everything
-		// else should be preserved.
-		defaultRuntimeConfig := extractDefaultRuntimeConfig(config)
-
 		// Configure containerd with new runtime handler
 		containerdRuntime = map[string]interface{}{
 			"runtimes": map[string]interface{}{
-				runtimeHandler: deepMerge(defaultRuntimeConfig, map[string]interface{}{
+				runtimeHandler: map[string]interface{}{
 					"snapshotter": "nydus",
-				}),
+				},
 			},
 		}
 	}

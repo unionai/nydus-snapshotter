@@ -118,11 +118,7 @@ snapshotter = 'overlayfs'
 
 [plugins.'io.containerd.grpc.v1.cri'.containerd.runtimes]
 [plugins.'io.containerd.grpc.v1.cri'.containerd.runtimes.nydus]
-runtime_type = 'io.containerd.runc.v2'
 snapshotter = 'nydus'
-
-[plugins.'io.containerd.grpc.v1.cri'.containerd.runtimes.nydus.options]
-SystemdCgroup = true
 
 [plugins.'io.containerd.grpc.v1.cri'.containerd.runtimes.runc]
 runtime_type = 'io.containerd.runc.v2'
