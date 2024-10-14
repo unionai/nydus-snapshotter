@@ -57,15 +57,18 @@ OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/bin/optimizer-server
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-config-updater ./cmd/containerd-config-updater
 
 .PHONY: static
 static:
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-config-updater ./cmd/containerd-config-updater
 
 debug:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/containerd-config-updater ./cmd/containerd-config-updater
 
 .PHONY: build-optimizer
 build-optimizer:
@@ -76,6 +79,7 @@ static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-config-updater ./cmd/containerd-config-updater
 	make -C tools/optimizer-server static-release && cp ${OPTIMIZER_SERVER_BIN} ./bin
 
 package/$(RELEASE).tar.gz: build build-optimizer

@@ -1,0 +1,6 @@
+nydus-snapshotter-*.tar.gz*
+containerd-config-updater
+containerd-nydus-grpc
+nydus-overlayfs
+optimizer-nri-plugin
+optimizer-server
