@@ -18,17 +18,26 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+var defaultReferrerTagSuffixes = []string{"-opt"}
+
 type Manager struct {
-	insecure bool
-	cache    *lru.Cache
-	sg       singleflight.Group
+	insecure            bool
+	cache               *lru.Cache
+	sg                  singleflight.Group
+	referrerTagSuffixes []string
 }
 
-func NewManager(insecure bool) *Manager {
+func NewManager(insecure bool, referrerTagSuffixes []string) *Manager {
 	manager := Manager{
-		insecure: insecure,
-		cache:    lru.New(500),
-		sg:       singleflight.Group{},
+		insecure:            insecure,
+		cache:               lru.New(500),
+		sg:                  singleflight.Group{},
+		referrerTagSuffixes: referrerTagSuffixes,
+	}
+
+	// Set default tag suffixes if not configured
+	if len(manager.referrerTagSuffixes) == 0 {
+		manager.referrerTagSuffixes = defaultReferrerTagSuffixes
 	}
 
 	return &manager
@@ -51,7 +60,7 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 
 		// No LRU cache found, try to fetch referrers and parse out
 		// the nydus metadata layer descriptor.
-		referrer := newReferrer(keyChain, manager.insecure)
+		referrer := newReferrer(keyChain, manager.insecure, manager.referrerTagSuffixes)
 		metaLayer, err := referrer.checkReferrer(ctx, ref, manifestDigest)
 		if err != nil {
 			return nil, errors.Wrap(err, "check referrer")
@@ -83,6 +92,6 @@ func (manager *Manager) TryFetchMetadata(ctx context.Context, ref string, manife
 		return errors.Wrap(err, "get key chain")
 	}
 
-	referrer := newReferrer(keyChain, manager.insecure)
+	referrer := newReferrer(keyChain, manager.insecure, manager.referrerTagSuffixes)
 	return referrer.fetchMetadata(ctx, ref, *metaLayer, metadataPath)
 }
