@@ -221,7 +221,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 
 	if cfg.Experimental.EnableReferrerDetect {
-		referrerMgr := referrer.NewManager(skipSSLVerify)
+		referrerMgr := referrer.NewManager(skipSSLVerify, cfg.Experimental.ReferrerTagSuffixes)
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
