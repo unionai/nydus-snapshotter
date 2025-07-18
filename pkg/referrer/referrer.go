@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
@@ -27,6 +28,7 @@ import (
 // Containerd restricts the max size of manifest index to 8M, follow it.
 const maxManifestIndexSize = 0x800000
 const metadataNameInLayer = "image/image.boot"
+const digestDelimiter = "@"
 
 type referrer struct {
 	remote              *remote.Remote
@@ -120,18 +122,14 @@ func (r *referrer) checkReferrerStandard(ctx context.Context, ref string, manife
 
 // checkReferrerTagBased implements tag-based referrer discovery for any registry
 func (r *referrer) checkReferrerTagBased(ctx context.Context, ref string, manifestDigest digest.Digest) (*ocispec.Descriptor, error) {
-	// Extract tag from reference
-	parts := strings.Split(ref, ":")
-	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid reference format")
+	// Generate candidate references using robust parsing
+	candidates, err := r.generateReferrerCandidates(ref, r.referrerTagSuffixes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate referrer candidates: %w", err)
 	}
 
-	baseTag := parts[len(parts)-1]
-	baseRef := strings.Join(parts[:len(parts)-1], ":")
-
-	// Try each configured tag suffix in priority order
-	for _, suffix := range r.referrerTagSuffixes {
-		candidateRef := baseRef + ":" + baseTag + suffix
+	// Try each candidate in priority order
+	for _, candidateRef := range candidates {
 		desc, err := r.validateTagBasedReferrer(ctx, candidateRef, manifestDigest)
 		if err == nil && desc != nil {
 			return desc, nil
@@ -189,6 +187,59 @@ func (r *referrer) validateTagBasedReferrer(ctx context.Context, candidateRef st
 	}
 
 	return &metaLayer, nil
+}
+
+// generateReferrerCandidates generates candidate referrer references using robust parsing
+func (r *referrer) generateReferrerCandidates(ref string, suffixes []string) ([]string, error) {
+	refspec, err := reference.Parse(ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse reference: %w", err)
+	}
+
+	// Get the base reference (without digest)
+	baseRef := refspec.Locator
+
+	// Parse the tag from the object field
+	tag, err := r.parseTagFromReference(refspec)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate candidate references
+	candidates := make([]string, 0, len(suffixes))
+	for _, suffix := range suffixes {
+		candidate := baseRef + ":" + tag + suffix
+		candidates = append(candidates, candidate)
+	}
+
+	return candidates, nil
+}
+
+// parseTagFromReference extracts the tag from a reference specification
+// This leverages the existing Digest() method and works with the Object field structure
+func (r *referrer) parseTagFromReference(refspec reference.Spec) (string, error) {
+	// If Object is empty, default to "latest"
+	if refspec.Object == "" {
+		return "latest", nil
+	}
+
+	// If Object starts with @, it's digest-only
+	if strings.HasPrefix(refspec.Object, digestDelimiter) {
+		return "", fmt.Errorf("digest-only reference cannot be used for tag-based discovery")
+	}
+
+	// Check if there's a digest part using the built-in method
+	if digest := refspec.Digest(); digest != "" {
+		// Object format is "tag@digest", extract the tag part
+		tagPart := strings.TrimSuffix(refspec.Object, digestDelimiter+digest.String())
+		if tagPart == "" {
+			return "", fmt.Errorf("invalid reference format: empty tag with digest")
+		}
+		return tagPart, nil
+	}
+
+	// Object is just a tag
+	return refspec.Object, nil
 }
 
 // fetchMetadata fetches and unpacks nydus metadata file to specified path.
