@@ -13,7 +13,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.8
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2
 	github.com/containerd/cgroups/v3 v3.0.3
-	github.com/containerd/containerd v1.7.23
 	github.com/containerd/containerd/api v1.8.0
 	github.com/containerd/containerd/v2 v2.0.2
 	github.com/containerd/continuity v0.4.4
@@ -45,9 +44,10 @@ require (
 	github.com/prometheus/client_model v0.6.1
 	github.com/rs/xid v1.5.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.5
 	go.etcd.io/bbolt v1.3.11
+	go.opentelemetry.io/otel v1.31.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/net v0.30.0
 	golang.org/x/sync v0.8.0
@@ -63,6 +63,7 @@ require (
 )
 
 require (
+	cyphar.com/go-pathrs v0.2.1 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.12.9 // indirect
@@ -88,6 +89,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
+	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
@@ -125,7 +127,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/runtime-tools v0.9.1-0.20221107090550-2e043c6bd626 // indirect
-	github.com/opencontainers/selinux v1.11.1 // indirect
+	github.com/opencontainers/selinux v1.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
@@ -140,7 +142,6 @@ require (
 	go.mozilla.org/pkcs7 v0.9.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.56.0 // indirect
-	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/metric v1.31.0 // indirect
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
