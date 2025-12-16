@@ -8,86 +8,87 @@ package remote
 
 import (
 	"archive/tar"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/containerd/containerd/v2/pkg/archive/compression"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
+	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
 func atomicWrite(target string, reader io.Reader) error {
 	dir := filepath.Dir(target)
 
-	// Create a temporary file in the same directory as target.
-	// This ensures they're on the same filesystem for linkat to work.
-	file, err := os.CreateTemp(dir, filepath.Base(target)+".tmp.")
+	// Create an anonymous file in the target directory.
+	// O_TMPFILE creates an unnamed inode that's never visible in the filesystem
+	// until we explicitly link it. If the process crashes, the kernel automatically
+	// cleans up the inode (no orphaned temp files).
+	fd, err := unix.Open(dir, unix.O_TMPFILE|unix.O_CLOEXEC|unix.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return errors.Wrapf(err, "open temp file in %s", dir)
 	}
 
+	file := os.NewFile(uintptr(fd), "")
 	defer file.Close()
 
-	// Get the temp file path before unlinking
-	tmpPath := file.Name()
-
-	// Immediately unlink the temp file.
-	// This removes the directory entry, but the file remains accessible via the fd.
-	// If the process is killed before linkat, the file is automatically cleaned up
-	// by the kernel when the fd is closed (no orphaned temp files).
-	if err := os.Remove(tmpPath); err != nil {
-		return fmt.Errorf("unlink temp file: %w", err)
-	}
-
-	// Write content to the anonymous file (still accessible via fd)
+	// Write content to the anonymous file
 	if _, err := io.Copy(file, reader); err != nil {
-		return fmt.Errorf("write to temp file: %w", err)
+		return errors.Wrapf(err, "write to temp file for %s", target)
 	}
 
 	// Sync to ensure data is on disk before linking
 	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync temp file: %w", err)
+		return errors.Wrapf(err, "sync temp file for %s", target)
 	}
 
-	// Get the fd number for constructing /proc path
-	fd := file.Fd()
-
-	// Construct the /proc/self/fd/<fd> path for linkat.
-	// This is the only way to reference an unlinked file for linking.
-	procPath := fmt.Sprintf("/proc/self/fd/%d", fd)
-
-	// Try to atomically link the anonymous file to the target path.
+	// Atomically link the anonymous file to the target path.
 	// AT_SYMLINK_FOLLOW is required when linking via /proc/self/fd/.
 	// linkat will fail with EEXIST if target already exists.
+	procPath := fmt.Sprintf("/proc/self/fd/%d", fd)
 	err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, target, unix.AT_SYMLINK_FOLLOW)
 	if err == nil {
-		// Success - file is now visible at target path
 		return nil
 	}
 
-	if !errors.Is(err, unix.EEXIST) {
-		// Unexpected error (permission denied, filesystem full, etc.)
-		return fmt.Errorf("linkat to target: %w", err)
+	if !stderrors.Is(err, unix.EEXIST) {
+		return errors.Wrapf(err, "linkat to target %s", target)
 	}
 
-	// Target already exists - another goroutine may have written it.
+	// Target already exists
 	// Fall back to staging + rename pattern to safely overwrite.
-	defer os.Remove(tmpPath) // Best-effort cleanup (harmless if file was renamed)
-	err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
-	if err != nil {
-		if errors.Is(err, unix.EEXIST) {
-			// Staging file also exists - another goroutine is already handling this.
-			// The target file either exists or will exist shortly. Treat as success.
+	var tmpPath string
+	defer func() {
+		if len(tmpPath) > 0 {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	// Chance of collision is low, but we retry to be safe.
+	if err := retry.Do(func() error {
+		tmpPath = fmt.Sprintf("%s.tmp.%d-%d-%d", target, os.Getpid(), fd, time.Now().UnixNano())
+		linkErr := unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
+		if linkErr == nil {
 			return nil
 		}
-		return fmt.Errorf("linkat to staging: %w", err)
+		if stderrors.Is(linkErr, unix.EEXIST) {
+			return linkErr // Retry on collision
+		}
+		return retry.Unrecoverable(linkErr) // Don't retry other errors
+	},
+		retry.Attempts(3),
+		retry.Delay(0),
+		retry.LastErrorOnly(true),
+	); err != nil {
+		return errors.Wrapf(err, "linkat to staging file for %s", target)
 	}
 
-	// Atomically rename staging file to target (overwrites existing target)
 	if err := os.Rename(tmpPath, target); err != nil {
-		return fmt.Errorf("rename staging file to target: %w", err)
+		return errors.Wrapf(err, "rename staging file %s to target %s", tmpPath, target)
 	}
 
 	return nil
