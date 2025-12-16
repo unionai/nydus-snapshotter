@@ -11,12 +11,45 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/containerd/containerd/v2/pkg/archive/compression"
 )
 
+// atomicWrite writes data from reader to target using atomic write pattern.
+// It writes to a temporary file first, then atomically renames it to target.
+func atomicWrite(target string, reader io.Reader) (err error) {
+	dir := filepath.Dir(target)
+	file, err := os.CreateTemp(dir, filepath.Base(target)+".tmp.")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := file.Name()
+
+	defer func() {
+		if err != nil {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = io.Copy(file, reader); err != nil {
+		file.Close()
+		return fmt.Errorf("write to temp file: %w", err)
+	}
+
+	if err = file.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err = os.Rename(tmpPath, target); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+
+	return nil
+}
+
 // Unpack unpacks the file named `source` in tar stream
-// and write into `target` path.
+// and write into `target` path using atomic write pattern.
 func Unpack(reader io.Reader, source, target string) error {
 	rdr, err := compression.DecompressStream(reader)
 	if err != nil {
@@ -35,12 +68,7 @@ func Unpack(reader io.Reader, source, target string) error {
 			return err
 		}
 		if hdr.Name == source {
-			file, err := os.Create(target)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-			if _, err := io.Copy(file, tr); err != nil {
+			if err := atomicWrite(target, tr); err != nil {
 				return err
 			}
 			found = true
