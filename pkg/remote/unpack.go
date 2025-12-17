@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/pkg/archive/compression"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -47,10 +46,8 @@ func atomicWrite(target string, reader io.Reader) error {
 	}
 
 	// Atomically link the anonymous file to the target path.
-	// AT_SYMLINK_FOLLOW is required when linking via /proc/self/fd/.
 	// linkat will fail with EEXIST if target already exists.
-	procPath := fmt.Sprintf("/proc/self/fd/%d", fd)
-	err = unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, target, unix.AT_SYMLINK_FOLLOW)
+	err = unix.Linkat(fd, "", unix.AT_FDCWD, target, unix.AT_EMPTY_PATH)
 	if err == nil {
 		return nil
 	}
@@ -60,30 +57,16 @@ func atomicWrite(target string, reader io.Reader) error {
 	}
 
 	// Target already exists
-	// Fall back to staging + rename pattern to safely overwrite.
-	var tmpPath string
-	defer func() {
-		if len(tmpPath) > 0 {
-			_ = os.Remove(tmpPath)
-		}
-	}()
+	// Fall back to staging to a unique temporary file + rename pattern to safely overwrite.
+	tmpPath := fmt.Sprintf("%s.tmp.%d-%d-%d", target, os.Getpid(), fd, time.Now().UnixNano())
+	defer os.Remove(tmpPath)
 
-	// Chance of collision is low, but we retry to be safe.
-	if err := retry.Do(func() error {
-		tmpPath = fmt.Sprintf("%s.tmp.%d-%d-%d", target, os.Getpid(), fd, time.Now().UnixNano())
-		linkErr := unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
-		if stderrors.Is(linkErr, unix.EEXIST) {
-			return linkErr // Retry on collision
-		}
-		return retry.Unrecoverable(linkErr) // Don't retry other errors
-	},
-		retry.Attempts(3),
-		retry.Delay(0),
-		retry.LastErrorOnly(true),
-	); err != nil {
+	// Write to a temporary file first
+	if err := unix.Linkat(fd, "", unix.AT_FDCWD, tmpPath, unix.AT_EMPTY_PATH); err != nil {
 		return errors.Wrapf(err, "linkat to staging file for %s", target)
 	}
 
+	// Atomically replace the target with the temporary file
 	if err := os.Rename(tmpPath, target); err != nil {
 		return errors.Wrapf(err, "rename staging file %s to target %s", tmpPath, target)
 	}
