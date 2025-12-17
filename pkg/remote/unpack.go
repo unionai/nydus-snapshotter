@@ -72,9 +72,6 @@ func atomicWrite(target string, reader io.Reader) error {
 	if err := retry.Do(func() error {
 		tmpPath = fmt.Sprintf("%s.tmp.%d-%d-%d", target, os.Getpid(), fd, time.Now().UnixNano())
 		linkErr := unix.Linkat(unix.AT_FDCWD, procPath, unix.AT_FDCWD, tmpPath, unix.AT_SYMLINK_FOLLOW)
-		if linkErr == nil {
-			return nil
-		}
 		if stderrors.Is(linkErr, unix.EEXIST) {
 			return linkErr // Retry on collision
 		}
