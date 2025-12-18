@@ -55,6 +55,7 @@ type Filesystem struct {
 	nydusdBinaryPath    string
 	rootMountpoint      string
 	snapshotMutexMap    sync.Map
+	metadataMutexMap    sync.Map // Protects concurrent writes to metadata files (e.g., image.boot)
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -445,6 +446,21 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 
 func (fs *Filesystem) getSnapshotMutex(snapshotID string) *sync.Mutex {
 	mu, _ := fs.snapshotMutexMap.LoadOrStore(snapshotID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+// getMetadataMutex returns a mutex for the given metadata file path.
+// This is used to serialize concurrent writes to the same metadata file
+// (e.g., image.boot) when multiple containers start simultaneously on
+// the same image with referrer detection enabled.
+//
+// Note: Mutexes are never removed from metadataMutexMap, which could cause
+// memory growth over time. This is acceptable because each mutex is small
+// (~96 bytes) and the number of unique metadata paths is bounded by the
+// number of unique images. This matches the existing pattern used by
+// snapshotMutexMap.
+func (fs *Filesystem) getMetadataMutex(metadataPath string) *sync.Mutex {
+	mu, _ := fs.metadataMutexMap.LoadOrStore(metadataPath, &sync.Mutex{})
 	return mu.(*sync.Mutex)
 }
 
