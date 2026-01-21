@@ -1,0 +1,54 @@
+# Kubernetes Job for testing referrer detection timing on EKS
+#
+# This job uses IRSA (IAM Roles for Service Accounts) to authenticate with ECR.
+# Ensure the service account has the necessary IAM role annotation:
+#   eksctl create iamserviceaccount \
+#     --name referrer-timing-sa \
+#     --namespace default \
+#     --cluster YOUR_CLUSTER \
+#     --attach-policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly \
+#     --approve
+#
+# Build and push the image first:
+#   docker build -t 992382529030.dkr.ecr.us-east-2.amazonaws.com/referrer-timing:latest .
+#   aws ecr get-login-password | docker login --username AWS --password-stdin 992382529030.dkr.ecr.us-east-2.amazonaws.com
+#   docker push 992382529030.dkr.ecr.us-east-2.amazonaws.com/referrer-timing:latest
+#
+# Then apply:
+#   kubectl apply -f k8s-job-eks.yaml
+#   kubectl logs -f job/referrer-timing
+#
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: referrer-timing-sa
+  annotations:
+    # Replace with your IAM role ARN
+    eks.amazonaws.com/role-arn: "arn:aws:iam::992382529030:role/YOUR_ROLE_NAME"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: referrer-timing
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: referrer-timing-sa
+      containers:
+      - name: referrer-timing
+        # Replace with your image location
+        image: 992382529030.dkr.ecr.us-east-2.amazonaws.com/referrer-timing:latest
+        args:
+        # Test ECR image (no optimized version exists)
+        - "-ref"
+        - "992382529030.dkr.ecr.us-east-2.amazonaws.com/union/dogfood:flyte-4226d5b6bc1d573fe3264aeaa1792702"
+        - "-verbose"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      restartPolicy: Never

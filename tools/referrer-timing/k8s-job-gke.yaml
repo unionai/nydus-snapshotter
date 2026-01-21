@@ -1,0 +1,54 @@
+# Kubernetes Job for testing referrer detection timing on GKE
+#
+# This job uses Workload Identity to authenticate with GAR.
+# Ensure the service account has the necessary IAM bindings:
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     --role roles/iam.workloadIdentityUser \
+#     --member "serviceAccount:PROJECT.svc.id.goog[NAMESPACE/referrer-timing-sa]" \
+#     GSA_EMAIL
+#
+# Build and push the image first:
+#   docker build -t us-docker.pkg.dev/YOUR_PROJECT/YOUR_REPO/referrer-timing:latest .
+#   docker push us-docker.pkg.dev/YOUR_PROJECT/YOUR_REPO/referrer-timing:latest
+#
+# Then apply:
+#   kubectl apply -f k8s-job-gke.yaml
+#   kubectl logs -f job/referrer-timing
+#
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: referrer-timing-sa
+  annotations:
+    # Replace with your GCP service account email
+    iam.gke.io/gcp-service-account: "YOUR_GCP_SA@YOUR_PROJECT.iam.gserviceaccount.com"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: referrer-timing
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: referrer-timing-sa
+      containers:
+      - name: referrer-timing
+        # Replace with your image location
+        image: us-docker.pkg.dev/YOUR_PROJECT/YOUR_REPO/referrer-timing:latest
+        args:
+        # Test GAR image with optimized version available
+        - "-ref"
+        - "us-docker.pkg.dev/dogfood-gcp-dataplane/orgs/dogfood-gcp/flyte:ae7937418a56fdb730bda165d004908b"
+        - "-verbose"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      restartPolicy: Never
+      # Optional: run on specific node pool
+      # nodeSelector:
+      #   cloud.google.com/gke-nodepool: default-pool

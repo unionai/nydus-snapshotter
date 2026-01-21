@@ -72,23 +72,49 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 }
 
 func FromCRI(host, ref string) (*PassKeyChain, error) {
+	start := time.Now()
+	logger := log.L.WithFields(log.Fields{
+		"component": "auth",
+		"phase":     "from_cri",
+		"host":      host,
+		"ref":       ref,
+	})
+	logger.Debug("CRI_AUTH_START")
+
 	if Credentials == nil {
+		logger.Debug("CRI_AUTH_NO_CREDENTIALS_PARSERS")
 		return nil, errors.New("No Credentials parsers")
 	}
 
+	parseStart := time.Now()
 	refSpec, err := parseReference(ref)
+	parseDuration := time.Since(parseStart).Milliseconds()
 	if err != nil {
-		log.L.WithError(err).Error("parse ref failed")
+		logger.WithFields(log.Fields{
+			"parse_duration_ms": parseDuration,
+		}).WithError(err).Error("CRI_AUTH_PARSE_REF_FAILED")
 		return nil, errors.Wrapf(err, "parse image reference %s", ref)
 	}
+	logger.WithField("parse_duration_ms", parseDuration).Debug("CRI_AUTH_REF_PARSED")
 
 	var u, p string
 	var keychain *PassKeyChain
 
-	for _, cred := range Credentials {
-		if username, secret, err := cred(host, refSpec); err != nil {
+	for i, cred := range Credentials {
+		credStart := time.Now()
+		username, secret, err := cred(host, refSpec)
+		credDuration := time.Since(credStart).Milliseconds()
+
+		if err != nil {
+			logger.WithFields(log.Fields{
+				"credential_index": i,
+				"cred_duration_ms": credDuration,
+				"total_duration_ms": time.Since(start).Milliseconds(),
+			}).WithError(err).Error("CRI_CREDENTIAL_PROVIDER_ERROR")
 			return nil, err
-		} else if !(username == "" && secret == "") {
+		}
+
+		if !(username == "" && secret == "") {
 			u = username
 			p = secret
 
@@ -97,8 +123,26 @@ func FromCRI(host, ref string) (*PassKeyChain, error) {
 				Password: p,
 			}
 
+			logger.WithFields(log.Fields{
+				"credential_index":  i,
+				"cred_duration_ms":  credDuration,
+				"total_duration_ms": time.Since(start).Milliseconds(),
+				"has_credentials":   true,
+			}).Info("CRI_AUTH_FOUND")
 			break
 		}
+
+		logger.WithFields(log.Fields{
+			"credential_index": i,
+			"cred_duration_ms": credDuration,
+		}).Debug("CRI_CREDENTIAL_PROVIDER_EMPTY")
+	}
+
+	if keychain == nil {
+		logger.WithFields(log.Fields{
+			"total_duration_ms":    time.Since(start).Milliseconds(),
+			"credentials_checked":  len(Credentials),
+		}).Debug("CRI_AUTH_NOT_FOUND")
 	}
 
 	return keychain, nil

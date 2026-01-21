@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/pkg/reference"
@@ -544,7 +545,17 @@ type request struct {
 }
 
 func (r *request) do(ctx context.Context) (*http.Response, error) {
+	start := time.Now()
 	u := r.host.Scheme + "://" + r.host.Host + r.path
+	logger := log.G(ctx).WithFields(log.Fields{
+		"component": "http_transport",
+		"phase":     "do_request",
+		"method":    r.method,
+		"host":      r.host.Host,
+		"path":      r.path,
+	})
+	logger.Debug("HTTP_DO_REQUEST_START")
+
 	req, err := http.NewRequestWithContext(ctx, r.method, u, nil)
 	if err != nil {
 		return nil, err
@@ -567,9 +578,18 @@ func (r *request) do(ctx context.Context) (*http.Response, error) {
 
 	ctx = log.WithLogger(ctx, log.G(ctx).WithField("url", u))
 	log.G(ctx).WithFields(requestFields(req)).Debug("do request")
+
+	// Authorization timing
+	authStart := time.Now()
 	if err := r.authorize(ctx, req); err != nil {
+		logger.WithFields(log.Fields{
+			"auth_duration_ms": time.Since(authStart).Milliseconds(),
+			"total_duration_ms": time.Since(start).Milliseconds(),
+		}).WithError(err).Debug("HTTP_DO_REQUEST_AUTH_FAILED")
 		return nil, fmt.Errorf("failed to authorize: %w", err)
 	}
+	authDuration := time.Since(authStart).Milliseconds()
+	logger.WithField("auth_duration_ms", authDuration).Debug("HTTP_DO_REQUEST_AUTH_COMPLETE")
 
 	client := &http.Client{}
 	if r.host.Client != nil {
@@ -591,52 +611,135 @@ func (r *request) do(ctx context.Context) (*http.Response, error) {
 		tracing.Name("remotes.docker.resolver", "HTTPRequest"),
 	)
 	defer httpSpan.End()
+
+	// HTTP request timing
+	httpStart := time.Now()
 	resp, err := client.Do(req)
+	httpDuration := time.Since(httpStart).Milliseconds()
+
 	if err != nil {
 		httpSpan.SetStatus(err)
+		logger.WithFields(log.Fields{
+			"auth_duration_ms":  authDuration,
+			"http_duration_ms":  httpDuration,
+			"total_duration_ms": time.Since(start).Milliseconds(),
+		}).WithError(err).Debug("HTTP_DO_REQUEST_FAILED")
 		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 	httpSpan.SetAttributes(
 		attribute.Int("http.response.status_code", resp.StatusCode),
 		attribute.Int("http.status_code", resp.StatusCode), // Deprecated: SemConv <= v1.21
 	)
+
+	logger.WithFields(log.Fields{
+		"auth_duration_ms":  authDuration,
+		"http_duration_ms":  httpDuration,
+		"total_duration_ms": time.Since(start).Milliseconds(),
+		"status_code":       resp.StatusCode,
+		"content_length":    resp.ContentLength,
+	}).Info("HTTP_DO_REQUEST_COMPLETE")
+
 	log.G(ctx).WithFields(responseFields(resp)).Debug("fetch response received")
 	return resp, nil
 }
 
 func (r *request) doWithRetries(ctx context.Context, responses []*http.Response) (*http.Response, error) {
+	attemptStart := time.Now()
+	attemptNum := len(responses) + 1
+	logger := log.G(ctx).WithFields(log.Fields{
+		"component":   "http_transport",
+		"phase":       "do_with_retries",
+		"method":      r.method,
+		"host":        r.host.Host,
+		"path":        r.path,
+		"attempt_num": attemptNum,
+	})
+	logger.Debug("HTTP_RETRY_ATTEMPT_START")
+
 	resp, err := r.do(ctx)
+	doDuration := time.Since(attemptStart).Milliseconds()
+
 	if err != nil {
+		logger.WithFields(log.Fields{
+			"do_duration_ms": doDuration,
+		}).WithError(err).Debug("HTTP_RETRY_ATTEMPT_FAILED")
 		return nil, err
 	}
 
 	responses = append(responses, resp)
+	retryCheckStart := time.Now()
 	retry, err := r.retryRequest(ctx, responses)
+	retryCheckDuration := time.Since(retryCheckStart).Milliseconds()
+
 	if err != nil {
+		logger.WithFields(log.Fields{
+			"do_duration_ms":          doDuration,
+			"retry_check_duration_ms": retryCheckDuration,
+			"status_code":             resp.StatusCode,
+		}).WithError(err).Debug("HTTP_RETRY_CHECK_ERROR")
 		resp.Body.Close()
 		return nil, err
 	}
 	if retry {
+		logger.WithFields(log.Fields{
+			"do_duration_ms":          doDuration,
+			"retry_check_duration_ms": retryCheckDuration,
+			"status_code":             resp.StatusCode,
+			"will_retry":              true,
+		}).Info("HTTP_RETRY_ATTEMPT_WILL_RETRY")
 		resp.Body.Close()
 		return r.doWithRetries(ctx, responses)
 	}
+
+	logger.WithFields(log.Fields{
+		"do_duration_ms":          doDuration,
+		"retry_check_duration_ms": retryCheckDuration,
+		"status_code":             resp.StatusCode,
+		"total_attempts":          attemptNum,
+		"will_retry":              false,
+	}).Debug("HTTP_RETRY_ATTEMPT_COMPLETE")
+
 	return resp, err
 }
 
 func (r *request) retryRequest(ctx context.Context, responses []*http.Response) (bool, error) {
+	logger := log.G(ctx).WithFields(log.Fields{
+		"component":       "http_transport",
+		"phase":           "retry_request",
+		"method":          r.method,
+		"host":            r.host.Host,
+		"path":            r.path,
+		"response_count":  len(responses),
+	})
+
 	if len(responses) > 5 {
+		logger.WithField("reason", "max_retries_exceeded").Debug("HTTP_RETRY_DECISION_NO_RETRY")
 		return false, nil
 	}
 	last := responses[len(responses)-1]
+	logger = logger.WithField("status_code", last.StatusCode)
+
 	switch last.StatusCode {
 	case http.StatusUnauthorized:
-		log.G(ctx).WithField("header", last.Header.Get("WWW-Authenticate")).Debug("Unauthorized")
+		logger.WithField("www_authenticate", last.Header.Get("WWW-Authenticate")).Debug("HTTP_RETRY_401_UNAUTHORIZED")
 		if r.host.Authorizer != nil {
+			authStart := time.Now()
 			if err := r.host.Authorizer.AddResponses(ctx, responses); err == nil {
+				logger.WithFields(log.Fields{
+					"auth_add_duration_ms": time.Since(authStart).Milliseconds(),
+					"reason":               "401_auth_refreshed",
+				}).Info("HTTP_RETRY_DECISION_WILL_RETRY")
 				return true, nil
 			} else if !errdefs.IsNotImplemented(err) {
+				logger.WithFields(log.Fields{
+					"auth_add_duration_ms": time.Since(authStart).Milliseconds(),
+				}).WithError(err).Debug("HTTP_RETRY_AUTH_ADD_ERROR")
 				return false, err
 			}
+			logger.WithFields(log.Fields{
+				"auth_add_duration_ms": time.Since(authStart).Milliseconds(),
+				"reason":               "auth_not_implemented",
+			}).Debug("HTTP_RETRY_DECISION_NO_RETRY")
 		}
 
 		return false, nil
@@ -645,12 +748,18 @@ func (r *request) retryRequest(ctx context.Context, responses []*http.Response) 
 		// manifests endpoint
 		if r.method == http.MethodHead && strings.Contains(r.path, "/manifests/") {
 			r.method = http.MethodGet
+			logger.WithField("reason", "405_switching_to_get").Info("HTTP_RETRY_DECISION_WILL_RETRY")
 			return true, nil
 		}
-	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+	case http.StatusRequestTimeout:
+		logger.WithField("reason", "408_request_timeout").Info("HTTP_RETRY_DECISION_WILL_RETRY")
+		return true, nil
+	case http.StatusTooManyRequests:
+		logger.WithField("reason", "429_too_many_requests").Info("HTTP_RETRY_DECISION_WILL_RETRY")
 		return true, nil
 	}
 
+	logger.WithField("reason", "no_retry_condition_matched").Debug("HTTP_RETRY_DECISION_NO_RETRY")
 	// TODO: Handle 50x errors accounting for attempt history
 	return false, nil
 }

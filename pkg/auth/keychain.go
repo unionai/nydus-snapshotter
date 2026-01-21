@@ -10,7 +10,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/pkg/label"
@@ -86,33 +88,127 @@ func FromLabels(labels map[string]string) *PassKeyChain {
 // 3. docker config
 // 4. k8s docker config secret
 func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyChain {
+	start := time.Now()
+	logger := log.L.WithFields(log.Fields{
+		"component": "auth",
+		"phase":     "get_registry_keychain",
+		"host":      host,
+		"ref":       ref,
+	})
+	logger.Debug("AUTH_KEYCHAIN_LOOKUP_START")
+
+	// Source 1: Labels
+	labelsStart := time.Now()
 	kc := FromLabels(labels)
+	labelsDuration := time.Since(labelsStart).Milliseconds()
 	if kc != nil {
+		logger.WithFields(log.Fields{
+			"source":            "labels",
+			"labels_duration_ms": labelsDuration,
+			"total_duration_ms": time.Since(start).Milliseconds(),
+			"has_credentials":   true,
+		}).Info("AUTH_KEYCHAIN_FOUND")
 		return kc
 	}
+	logger.WithFields(log.Fields{
+		"source":            "labels",
+		"labels_duration_ms": labelsDuration,
+	}).Debug("AUTH_SOURCE_MISS")
 
-	// TODO: Handle error
+	// Source 2: CRI
+	criStart := time.Now()
 	kc, _ = FromCRI(host, ref)
+	criDuration := time.Since(criStart).Milliseconds()
 	if kc != nil {
+		logger.WithFields(log.Fields{
+			"source":           "cri",
+			"cri_duration_ms":  criDuration,
+			"total_duration_ms": time.Since(start).Milliseconds(),
+			"has_credentials":  true,
+		}).Info("AUTH_KEYCHAIN_FOUND")
 		return kc
 	}
+	logger.WithFields(log.Fields{
+		"source":          "cri",
+		"cri_duration_ms": criDuration,
+	}).Debug("AUTH_SOURCE_MISS")
 
+	// Source 3: Docker config
+	dockerStart := time.Now()
 	kc = FromDockerConfig(host)
+	dockerDuration := time.Since(dockerStart).Milliseconds()
 	if kc != nil {
+		logger.WithFields(log.Fields{
+			"source":             "docker_config",
+			"docker_duration_ms": dockerDuration,
+			"total_duration_ms":  time.Since(start).Milliseconds(),
+			"has_credentials":    true,
+		}).Info("AUTH_KEYCHAIN_FOUND")
+		return kc
+	}
+	logger.WithFields(log.Fields{
+		"source":             "docker_config",
+		"docker_duration_ms": dockerDuration,
+	}).Debug("AUTH_SOURCE_MISS")
+
+	// Source 4: Kube secret
+	kubeStart := time.Now()
+	kc = FromKubeSecretDockerConfig(host)
+	kubeDuration := time.Since(kubeStart).Milliseconds()
+	if kc != nil {
+		logger.WithFields(log.Fields{
+			"source":            "kube_secret",
+			"kube_duration_ms":  kubeDuration,
+			"total_duration_ms": time.Since(start).Milliseconds(),
+			"has_credentials":   true,
+		}).Info("AUTH_KEYCHAIN_FOUND")
 		return kc
 	}
 
-	return FromKubeSecretDockerConfig(host)
+	logger.WithFields(log.Fields{
+		"labels_duration_ms": labelsDuration,
+		"cri_duration_ms":    criDuration,
+		"docker_duration_ms": dockerDuration,
+		"kube_duration_ms":   kubeDuration,
+		"total_duration_ms":  time.Since(start).Milliseconds(),
+		"has_credentials":    false,
+	}).Debug("AUTH_KEYCHAIN_NOT_FOUND")
+
+	return nil
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
+	start := time.Now()
+	logger := log.L.WithFields(log.Fields{
+		"component": "auth",
+		"phase":     "get_keychain_by_ref",
+		"ref":       ref,
+	})
+	logger.Debug("GET_KEYCHAIN_BY_REF_START")
+
+	parseStart := time.Now()
 	named, err := distribution.ParseDockerRef(ref)
+	parseDuration := time.Since(parseStart).Milliseconds()
 	if err != nil {
+		logger.WithFields(log.Fields{
+			"parse_duration_ms": parseDuration,
+		}).WithError(err).Error("GET_KEYCHAIN_BY_REF_PARSE_FAILED")
 		return nil, errors.Wrapf(err, "parse ref %s", ref)
 	}
 
 	host := distribution.Domain(named)
+	logger = logger.WithField("host", host)
+
+	keychainStart := time.Now()
 	keychain := GetRegistryKeyChain(host, ref, labels)
+	keychainDuration := time.Since(keychainStart).Milliseconds()
+
+	logger.WithFields(log.Fields{
+		"parse_duration_ms":    parseDuration,
+		"keychain_duration_ms": keychainDuration,
+		"total_duration_ms":    time.Since(start).Milliseconds(),
+		"has_credentials":      keychain != nil,
+	}).Info("GET_KEYCHAIN_BY_REF_COMPLETE")
 
 	return keychain, nil
 }
