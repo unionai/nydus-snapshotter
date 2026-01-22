@@ -82,10 +82,24 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		case label.IsNydusDataLayer(labels):
 			logger.Debugf("found nydus data layer")
 			handler = skipHandler
-		case sn.fs.CheckReferrer(ctx, labels):
-			logger.Debugf("found referenced nydus manifest")
-			handler = skipHandler
 		default:
+			// Check for referrer before other handlers
+			if sn.fs.ReferrerDetectEnabled() {
+				logger.WithFields(logrus.Fields{
+					"call_site":       "process.go:RO_LAYER_CHECK",
+					"snapshot_id":     s.ID,
+					"snapshot_key":    key,
+					"target_ref":      labels[snpkg.TargetRefLabel],
+					"manifest_digest": labels[snpkg.TargetManifestDigestLabel],
+				}).Info("REFERRER_CHECK_TRIGGER_RO_LAYER")
+
+				if sn.fs.CheckReferrer(ctx, labels) {
+					logger.Debugf("found referenced nydus manifest")
+					handler = skipHandler
+					break
+				}
+			}
+
 			if sn.fs.StargzEnabled() {
 				// Check if the blob is format of estargz
 				if ok, blob := sn.fs.IsStargzDataLayer(labels); ok {
@@ -142,6 +156,11 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		}
 
 		if handler == nil && sn.fs.ReferrerDetectEnabled() {
+			logger.WithFields(logrus.Fields{
+				"call_site":    "process.go:WRITABLE_LAYER_CHECK",
+				"snapshot_key": key,
+				"parent":       parent,
+			}).Info("FIND_REFERRER_LAYER_TRIGGER_WRITABLE")
 			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
 				logger.Infof("Found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
 				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")

@@ -72,19 +72,48 @@ func IterateParentSnapshots(ctx context.Context, ms *storage.MetaStore, key stri
 		}
 	}()
 
+	iterationCount := 0
+	log.L.WithFields(log.Fields{
+		"call_site":    "IterateParentSnapshots",
+		"snapshot_key": key,
+	}).Debug("ITERATE_PARENTS_START")
+
 	for cKey := key; cKey != ""; {
+		iterationCount++
 		id, info, _, err := storage.GetInfo(ctx, cKey)
 		if err != nil {
 			log.L.WithError(err).Warnf("failed to get snapshot info of %q", cKey)
 			return "", snapshots.Info{}, err
 		}
 
+		log.L.WithFields(log.Fields{
+			"call_site":      "IterateParentSnapshots",
+			"snapshot_key":   key,
+			"iteration":      iterationCount,
+			"current_key":    cKey,
+			"current_id":     id,
+			"current_parent": info.Parent,
+			"info_kind":      info.Kind.String(),
+		}).Debug("ITERATE_PARENTS_VISITING")
+
 		if fn(id, info) {
+			log.L.WithFields(log.Fields{
+				"call_site":        "IterateParentSnapshots",
+				"snapshot_key":     key,
+				"total_iterations": iterationCount,
+				"found_id":         id,
+			}).Debug("ITERATE_PARENTS_FOUND")
 			return id, info, nil
 		}
 
 		cKey = info.Parent
 	}
+
+	log.L.WithFields(log.Fields{
+		"call_site":        "IterateParentSnapshots",
+		"snapshot_key":     key,
+		"total_iterations": iterationCount,
+	}).Debug("ITERATE_PARENTS_NOT_FOUND")
 
 	return "", snapshots.Info{}, errdefs.ErrNotFound
 }

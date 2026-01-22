@@ -423,9 +423,15 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if o.fs.ReferrerDetectEnabled() && !needRemoteMounts {
-		if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
+		log.L.WithFields(log.Fields{
+			"call_site":    "snapshot.go:MOUNTS",
+			"snapshot_key": key,
+			"snapshot_id":  id,
+			"info_kind":    info.Kind.String(),
+		}).Info("FIND_REFERRER_LAYER_TRIGGER_MOUNTS")
+		if foundID, _, err := o.findReferrerLayer(ctx, key); err == nil {
 			needRemoteMounts = true
-			metaSnapshotID = id
+			metaSnapshotID = foundID
 		}
 	}
 
@@ -715,9 +721,45 @@ func (o *snapshotter) workPath(id string) string {
 }
 
 func (o *snapshotter) findReferrerLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
-	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, info snapshots.Info) bool {
-		return o.fs.CheckReferrer(ctx, info.Labels)
+	iterationCount := 0
+	log.L.WithFields(log.Fields{
+		"call_site":    "findReferrerLayer",
+		"snapshot_key": key,
+	}).Info("FIND_REFERRER_LAYER_START")
+
+	result, info, err := snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, info snapshots.Info) bool {
+		iterationCount++
+		log.L.WithFields(log.Fields{
+			"call_site":       "findReferrerLayer:ITERATION",
+			"iteration":       iterationCount,
+			"snapshot_key":    key,
+			"current_id":      id,
+			"current_parent":  info.Parent,
+			"target_ref":      info.Labels[snpkg.TargetRefLabel],
+			"manifest_digest": info.Labels[snpkg.TargetManifestDigestLabel],
+		}).Info("FIND_REFERRER_LAYER_CHECKING_PARENT")
+
+		result := o.fs.CheckReferrer(ctx, info.Labels)
+
+		log.L.WithFields(log.Fields{
+			"call_site":    "findReferrerLayer:ITERATION_RESULT",
+			"iteration":    iterationCount,
+			"snapshot_key": key,
+			"current_id":   id,
+			"check_result": result,
+		}).Info("FIND_REFERRER_LAYER_CHECK_COMPLETE")
+
+		return result
 	})
+
+	log.L.WithFields(log.Fields{
+		"call_site":        "findReferrerLayer",
+		"snapshot_key":     key,
+		"total_iterations": iterationCount,
+		"found":            err == nil,
+	}).Info("FIND_REFERRER_LAYER_COMPLETE")
+
+	return result, info, err
 }
 
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
