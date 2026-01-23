@@ -637,6 +637,10 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}()
 	}
 
+	if manifestDigest, ok := info.Labels[snpkg.TargetManifestDigestLabel]; ok {
+		_ = o.referrerMgr.RemoveReferrer(ctx, digest.Digest(manifestDigest))
+	}
+
 	_, _, err = storage.Remove(ctx, key)
 	if err != nil {
 		return errors.Wrapf(err, "failed to remove key %s", key)
@@ -1007,7 +1011,6 @@ func (o *snapshotter) checkReferrer(ctx context.Context, labels map[string]strin
 	if _, err := o.referrerMgr.CheckReferrer(ctx, ref, manifestDigest); err != nil {
 		return false
 	}
-
 	return true
 }
 
