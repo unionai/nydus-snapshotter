@@ -82,7 +82,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		case label.IsNydusDataLayer(labels):
 			logger.Debugf("found nydus data layer")
 			handler = skipHandler
-		case sn.fs.CheckReferrer(ctx, labels):
+		case sn.checkReferrer(ctx, labels):
 			logger.Debugf("found referenced nydus manifest")
 			handler = skipHandler
 		default:
@@ -141,11 +141,11 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 		}
 
-		if handler == nil && sn.fs.ReferrerDetectEnabled() {
+		if handler == nil && sn.referrerDetectEnabled() {
 			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
 				logger.Infof("Found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
 				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
-				if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
+				if err := sn.tryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
 					return nil, "", errors.Wrap(err, "try fetch metadata")
 				}
 				handler = remoteHandler(id, info.Labels)

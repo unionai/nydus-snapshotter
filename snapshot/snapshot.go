@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -55,6 +56,7 @@ type snapshotter struct {
 	ms                   *storage.MetaStore // Storing snapshots' state, parentage and other metadata
 	fs                   *filesystem.Filesystem
 	cgroupManager        *cgroup.Manager
+	referrerMgr          *referrer.Manager
 	enableNydusOverlayFS bool
 	nydusOverlayFSPath   string
 	enableKataVolume     bool
@@ -223,9 +225,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 	opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 
+	var referrerMgr *referrer.Manager
 	if cfg.Experimental.EnableReferrerDetect {
-		referrerMgr := referrer.NewManager(skipSSLVerify)
-		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
+		referrerMgr = referrer.NewManager(skipSSLVerify)
 	}
 
 	if cfg.Experimental.TarfsConfig.EnableTarfs {
@@ -294,6 +296,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		syncRemove:           syncRemove,
 		fs:                   nydusFs,
 		cgroupManager:        cgroupMgr,
+		referrerMgr:          referrerMgr,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		nydusOverlayFSPath:   cfg.SnapshotsConfig.NydusOverlayFSPath,
 		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
@@ -425,7 +428,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	case snapshots.KindUnknown:
 	}
 
-	if o.fs.ReferrerDetectEnabled() && !needRemoteMounts {
+	if o.referrerDetectEnabled() && !needRemoteMounts {
 		if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
 			needRemoteMounts = true
 			metaSnapshotID = id
@@ -719,7 +722,7 @@ func (o *snapshotter) workPath(id string) string {
 
 func (o *snapshotter) findReferrerLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, info snapshots.Info) bool {
-		return o.fs.CheckReferrer(ctx, info.Labels)
+		return o.checkReferrer(ctx, info.Labels)
 	})
 }
 
@@ -982,6 +985,59 @@ func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID st
 	return nil
 }
 
+func (o *snapshotter) referrerDetectEnabled() bool {
+	return o.referrerMgr != nil
+}
+
+func (o *snapshotter) checkReferrer(ctx context.Context, labels map[string]string) bool {
+	if !o.referrerDetectEnabled() {
+		return false
+	}
+
+	ref, ok := labels[snpkg.TargetRefLabel]
+	if !ok {
+		return false
+	}
+
+	manifestDigest := digest.Digest(labels[snpkg.TargetManifestDigestLabel])
+	if manifestDigest.Validate() != nil {
+		return false
+	}
+
+	if _, err := o.referrerMgr.CheckReferrer(ctx, ref, manifestDigest); err != nil {
+		return false
+	}
+
+	return true
+}
+
+func (o *snapshotter) tryFetchMetadata(ctx context.Context, labels map[string]string, metadataPath string) error {
+	ref, ok := labels[snpkg.TargetRefLabel]
+	if !ok {
+		return fmt.Errorf("empty label %s", snpkg.TargetRefLabel)
+	}
+
+	manifestDigest := digest.Digest(labels[snpkg.TargetManifestDigestLabel])
+	if err := manifestDigest.Validate(); err != nil {
+		return fmt.Errorf("invalid label %s=%s", snpkg.TargetManifestDigestLabel, manifestDigest)
+	}
+
+	return o.fs.WithMetadataPathLock(metadataPath, func() error {
+		// Check if metadata file already exists to avoid redundant fetches.
+		// This is safe now because we hold the mutex.
+		if _, err := os.Stat(metadataPath); err == nil {
+			log.L.Debugf("Metadata file %s already exists, skipping fetch", metadataPath)
+			return nil
+		}
+
+		if err := o.referrerMgr.TryFetchMetadata(ctx, ref, manifestDigest, metadataPath); err != nil {
+			return errors.Wrap(err, "try fetch metadata")
+		}
+
+		return nil
+	})
+}
+
 func bindMount(source, roFlag string) []mount.Mount {
 	return []mount.Mount{
 		{
@@ -1065,7 +1121,7 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 
 	lowerPaths := make([]string, 0, 8)
-	if o.fs.ReferrerDetectEnabled() {
+	if o.referrerDetectEnabled() {
 		// From the parent list, we want to add all the layers
 		// between the upmost snapshot and the nydus meta snapshot.
 		// On the other hand, we consider that all the layers below
