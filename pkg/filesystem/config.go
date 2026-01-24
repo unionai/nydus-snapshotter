@@ -10,7 +10,6 @@ package filesystem
 import (
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
@@ -45,17 +44,6 @@ func WithCacheManager(cm *cache.Manager) NewFSOpt {
 		}
 
 		fs.cacheMgr = cm
-		return nil
-	}
-}
-
-func WithReferrerManager(rm *referrer.Manager) NewFSOpt {
-	return func(fs *Filesystem) error {
-		if rm == nil {
-			return errors.New("referrer manager cannot be nil")
-		}
-
-		fs.referrerMgr = rm
 		return nil
 	}
 }
