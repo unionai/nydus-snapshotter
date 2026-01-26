@@ -8,6 +8,7 @@ package referrer
 
 import (
 	"context"
+	"sync"
 
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -24,6 +25,7 @@ type noReferrers struct{}
 type Manager struct {
 	insecure bool
 	cache    *lru.Cache
+	mu       sync.Mutex
 	sg       singleflight.Group
 }
 
@@ -42,7 +44,7 @@ func NewManager(insecure bool) *Manager {
 func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestDigest digest.Digest) (*ocispec.Descriptor, error) {
 	metaLayer, err, _ := manager.sg.Do(manifestDigest.String(), func() (interface{}, error) {
 		// Try to get nydus metadata layer descriptor from LRU cache.
-		if hit, ok := manager.cache.Get(manifestDigest); ok {
+		if hit, ok := manager.cacheGet(manifestDigest); ok {
 			if desc, ok := hit.(ocispec.Descriptor); ok {
 				return &desc, nil
 			} else if _, ok = hit.(noReferrers); ok {
@@ -64,7 +66,7 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 			return nil, errors.Wrap(err, "check referrer")
 		} else {
 			// FIXME: how to invalidate the LRU cache if referrers update?
-			manager.cache.Add(manifestDigest, *metaLayer)
+			manager.cacheSet(manifestDigest, *metaLayer)
 		}
 
 		return metaLayer, nil
@@ -80,7 +82,9 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 
 func (manager *Manager) RemoveReferrer(ctx context.Context, manifestDigest digest.Digest) error {
 	log.L.WithField("manifestDigest", manifestDigest).Debug("Removing from referrer cache")
+	manager.mu.Lock()
 	manager.cache.Remove(manifestDigest)
+	manager.mu.Unlock()
 	return nil
 }
 
@@ -98,4 +102,17 @@ func (manager *Manager) TryFetchMetadata(ctx context.Context, ref string, manife
 
 	referrer := newReferrer(keyChain, manager.insecure)
 	return referrer.fetchMetadata(ctx, ref, *metaLayer, metadataPath)
+}
+
+func (manager *Manager) cacheGet(key lru.Key) (interface{}, bool) {
+	manager.mu.Lock()
+	result, ok := manager.cache.Get(key)
+	manager.mu.Unlock()
+	return result, ok
+}
+
+func (manager *Manager) cacheSet(key lru.Key, value interface{}) {
+	manager.mu.Lock()
+	manager.cache.Add(key, value)
+	manager.mu.Unlock()
 }
