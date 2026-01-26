@@ -11,12 +11,15 @@ import (
 
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/golang/groupcache/lru"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/singleflight"
 )
+
+type noReferrers struct{}
 
 type Manager struct {
 	insecure bool
@@ -39,9 +42,12 @@ func NewManager(insecure bool) *Manager {
 func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestDigest digest.Digest) (*ocispec.Descriptor, error) {
 	metaLayer, err, _ := manager.sg.Do(manifestDigest.String(), func() (interface{}, error) {
 		// Try to get nydus metadata layer descriptor from LRU cache.
-		if metaLayer, ok := manager.cache.Get(manifestDigest); ok {
-			desc := metaLayer.(ocispec.Descriptor)
-			return &desc, nil
+		if hit, ok := manager.cache.Get(manifestDigest); ok {
+			if desc, ok := hit.(ocispec.Descriptor); ok {
+				return &desc, nil
+			} else if _, ok = hit.(noReferrers); ok {
+				return nil, errdefs.ErrNotFound
+			}
 		}
 
 		keyChain, err := auth.GetKeyChainByRef(ref, nil)
@@ -54,11 +60,12 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 		referrer := newReferrer(keyChain, manager.insecure)
 		metaLayer, err := referrer.checkReferrer(ctx, ref, manifestDigest)
 		if err != nil {
+			manager.cache.Add(manifestDigest, noReferrers{})
 			return nil, errors.Wrap(err, "check referrer")
+		} else {
+			// FIXME: how to invalidate the LRU cache if referrers update?
+			manager.cache.Add(manifestDigest, *metaLayer)
 		}
-
-		// FIXME: how to invalidate the LRU cache if referrers update?
-		manager.cache.Add(manifestDigest, *metaLayer)
 
 		return metaLayer, nil
 	})
@@ -69,6 +76,12 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 	}
 
 	return metaLayer.(*ocispec.Descriptor), nil
+}
+
+func (manager *Manager) RemoveReferrer(ctx context.Context, manifestDigest digest.Digest) error {
+	log.L.WithField("manifestDigest", manifestDigest).Debug("Removing from referrer cache")
+	manager.cache.Remove(manifestDigest)
+	return nil
 }
 
 // TryFetchMetadata try to fetch and unpack nydus metadata file to specified path.
