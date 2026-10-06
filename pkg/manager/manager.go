@@ -118,15 +118,17 @@ func (m *Manager) CacheDir() string {
 // Recover nydusd daemons and RAFS instances on startup.
 //
 // To be safe:
-// - Never ever delete any records from DB
-// - Only cache daemon information from DB, do not actually start/create daemons
-// - Only cache RAFS instance information from DB, do not actually recover RAFS runtime state.
+//   - Only delete records of a daemon that is not running and whose configuration
+//     can no longer be loaded (see recoverDaemons), along with its RAFS instances.
+//   - Only cache daemon information from DB, do not actually start/create daemons
+//   - Only cache RAFS instance information from DB, do not actually recover RAFS runtime state.
 func (m *Manager) Recover(ctx context.Context,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
-	if err := m.recoverDaemons(ctx, recoveringDaemons, liveDaemons); err != nil {
+	droppedDaemons := make(map[string]*daemon.Daemon)
+	if err := m.recoverDaemons(ctx, recoveringDaemons, liveDaemons, droppedDaemons); err != nil {
 		return errors.Wrapf(err, "recover nydusd daemons")
 	}
-	if err := m.recoverRafsInstances(ctx, recoveringDaemons, liveDaemons); err != nil {
+	if err := m.recoverRafsInstances(ctx, recoveringDaemons, liveDaemons, droppedDaemons); err != nil {
 		return errors.Wrapf(err, "recover RAFS instances")
 	}
 	return nil
@@ -151,9 +153,19 @@ func (m *Manager) RemoveRafsInstance(snapshotID string) error {
 }
 
 func (m *Manager) recoverRafsInstances(ctx context.Context,
-	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
+	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon,
+	droppedDaemons map[string]*daemon.Daemon) error {
+	// Records are deleted after the walk: the walk holds a read transaction, and
+	// opening a write transaction from inside it can deadlock bbolt.
+	var orphaned []string
 	if err := m.store.WalkRafsInstances(ctx, func(r *rafs.Rafs) error {
 		if r.GetFsDriver() != m.FsDriver {
+			return nil
+		}
+
+		if _, dropped := droppedDaemons[r.DaemonID]; dropped {
+			// Not cached, so the next mount of this snapshot starts a new daemon.
+			orphaned = append(orphaned, r.SnapshotID)
 			return nil
 		}
 
@@ -175,6 +187,13 @@ func (m *Manager) recoverRafsInstances(ctx context.Context,
 		return nil
 	}); err != nil {
 		return errors.Wrapf(err, "walk instances to reconnect")
+	}
+
+	for _, snapshotID := range orphaned {
+		log.L.Warnf("Deleting RAFS instance %s of dropped daemon", snapshotID)
+		if err := m.store.DeleteRafsInstance(snapshotID); err != nil {
+			return errors.Wrapf(err, "delete RAFS instance %s of dropped daemon", snapshotID)
+		}
 	}
 
 	return nil
@@ -300,7 +319,8 @@ func (m *Manager) cleanUpDaemonResources(d *daemon.Daemon) {
 }
 
 func (m *Manager) recoverDaemons(ctx context.Context,
-	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
+	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon,
+	droppedDaemons map[string]*daemon.Daemon) error {
 	if err := m.store.WalkDaemons(ctx, func(s *daemon.ConfigState) error {
 		if s.FsDriver != m.FsDriver {
 			return nil
@@ -324,6 +344,17 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		if d.States.FsDriver == config.FsDriverFusedev {
 			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 			if err != nil {
+				// An unclean shutdown can leave the configuration empty or partial.
+				// A daemon that is not running cannot be restarted from it, so drop
+				// it rather than fail recovery of every other daemon; a new daemon
+				// mounts its RAFS instances on demand.
+				if _, stateErr := d.GetState(); stateErr != nil {
+					log.L.Warnf("Dropping daemon %s: failed to reload configuration %s, %s", d.ID(), d.ConfigFile(""), err)
+					m.daemonCache.Remove(d)
+					droppedDaemons[d.ID()] = d
+					//nolint:nilerr
+					return nil
+				}
 				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
 				return err
 			}
@@ -375,6 +406,20 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		return nil
 	}); err != nil {
 		return errors.Wrapf(err, "walk daemons to reconnect")
+	}
+
+	// Records are deleted after the walk: the walk holds a read transaction, and
+	// opening a write transaction from inside it can deadlock bbolt.
+	for id, d := range droppedDaemons {
+		if err := m.store.DeleteDaemon(id); err != nil {
+			return errors.Wrapf(err, "delete dropped daemon %s", id)
+		}
+		if m.SupervisorSet != nil {
+			if err := m.SupervisorSet.DestroySupervisor(id); err != nil {
+				log.L.Warnf("Failed to delete supervisor for dropped daemon %s, %s", id, err)
+			}
+		}
+		m.cleanUpDaemonResources(d)
 	}
 
 	return nil

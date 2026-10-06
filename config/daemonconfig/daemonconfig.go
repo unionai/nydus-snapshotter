@@ -9,10 +9,10 @@ package daemonconfig
 
 import (
 	"encoding/json"
-	"os"
 	"reflect"
 	"strings"
 
+	"github.com/containerd/continuity"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -138,7 +138,9 @@ func DumpConfigFile(c interface{}, path string) error {
 		return errors.Wrapf(err, "marshal config")
 	}
 
-	return os.WriteFile(path, b, 0600)
+	// Synced and renamed into place, so a crash soon after a daemon starts
+	// cannot leave the file empty and stop the daemon from being recovered.
+	return continuity.AtomicWriteFile(path, b, 0600)
 }
 
 func DumpConfigString(c interface{}) (string, error) {
